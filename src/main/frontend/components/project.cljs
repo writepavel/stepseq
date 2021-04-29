@@ -21,7 +21,7 @@
           :stroke-linejoin "round",
           :stroke-linecap "round"}]]]
       [:div.mt-3.text-center.sm:mt-0.sm:ml-4.sm:text-left
-       [:h3#modal-headline.text-lg.leading-6.font-medium.text-gray-900
+       [:h3#modal-headline.text-lg.leading-6.font-medium
         "Setup a public project on Logseq"]
        [:div.mt-2
         [:p.text-sm.leading-5.text-gray-500
@@ -31,7 +31,6 @@
 
      [:input.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
       {:auto-focus true
-       :style {:color "#000"}
        :on-change (fn [e]
                     (reset! project (util/evalue e)))}]
 

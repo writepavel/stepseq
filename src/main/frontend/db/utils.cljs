@@ -20,6 +20,9 @@
     (for [d (d/datoms db :eavt)]
       #js [(:e d) (name (:a d)) (:v d)]))))
 
+(defn db->edn-str [db]
+  (pr-str db))
+
 (defn string->db [s]
   (dt/read-transit-str s))
 
@@ -35,8 +38,12 @@
 (defn group-by-page
   [blocks]
   (some->> blocks
-           (group-by :block/page)
-           (sort-by (fn [[p _blocks]] (:page/last-modified-at p)) >)))
+           (group-by :block/page)))
+
+(defn group-by-file
+  [blocks]
+  (some->> blocks
+           (group-by :block/file)))
 
 (defn get-tx-id [tx-report]
   (get-in tx-report [:tempids :db/current-tx]))

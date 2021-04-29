@@ -3,11 +3,15 @@
             [frontend.date :as date]
             [frontend.state :as state]
             [frontend.search :as search]
+            [frontend.config :as config]
             [clojure.string :as string]
             [goog.dom :as gdom]
             [goog.object :as gobj]
             [frontend.format :as format]
-            [frontend.handler.common :as common-handler]))
+            [frontend.handler.common :as common-handler]
+            [frontend.handler.draw :as draw]
+            [frontend.handler.notification :as notification]
+            [promesa.core :as p]))
 
 ;; TODO: move to frontend.handler.editor.commands
 
@@ -97,14 +101,17 @@
      ["B" (->priority "B")]
      ["C" (->priority "C")]
      ["Deadline" [[:editor/clear-current-slash]
-                  [:editor/show-date-picker]]]
+                  [:editor/show-date-picker :deadline]]]
      ["Scheduled" [[:editor/clear-current-slash]
-                   [:editor/show-date-picker]]]
+                   [:editor/show-date-picker :scheduled]]]
      ["Query" [[:editor/input "{{query }}" {:backward-pos 2}]]]
-     ["Draw" [[:editor/input "/draw "]
-              [:editor/show-input [{:command :draw
-                                    :id :title
-                                    :placeholder "Draw title"}]]]]
+     ["Draw" (fn []
+               (let [file (draw/file-name)
+                     path (str config/default-draw-directory "/" file)
+                     text (util/format "[[%s]]" path)]
+                 (p/let [_ (draw/create-draw-with-default-content path)]
+                   (println "draw file created, " path))
+                 text))]
      ["WAITING" (->marker "WAITING")]
      ["CANCELED" (->marker "CANCELED")]
      ["Tomorrow" #(get-page-ref-text (date/tomorrow))]
@@ -123,10 +130,29 @@
                   [:editor/search-template]]]
      ;; same as link
      ["Image Link" link-steps]
-     (when (state/logged?)
+     (cond
+       (and (util/electron?) (config/local-db? (state/get-current-repo)))
+
+       ["Upload an asset (image, pdf, docx, etc.)" [[:editor/click-hidden-file-input :id]]]
+
+       (state/logged?)
        ["Upload an image" [[:editor/click-hidden-file-input :id]]])
+
+     (when (util/zh-CN-supported?)
+       ["Embed Bilibili Video" [[:editor/input "{{bilibili }}" {:last-pattern slash
+                                                                :backward-pos 2}]]])
+
      ["Embed Youtube Video" [[:editor/input "{{youtube }}" {:last-pattern slash
                                                             :backward-pos 2}]]]
+
+     ["Embed Vimeo Video" [[:editor/input "{{vimeo }}" {:last-pattern slash
+                                                        :backward-pos 2}]]]
+
+     (when (state/markdown?)
+       ["Underline" [[:editor/input "<ins></ins>"
+                      {:last-pattern slash
+                       :backward-pos 6}]]])
+
      ["Html Inline " (->inline "html")]
 
      ;; TODO:
@@ -186,6 +212,7 @@
      ["Tip" (->block "tip")]
      ["Important" (->block "important")]
      ["Caution" (->block "caution")]
+     ["Pinned" (->block "pinned")]
      ["Warning" (->block "warning")]
      ["Example" (->block "example")]
      ["Export" (->block "export")]
@@ -220,12 +247,22 @@
         edit-content (gobj/get input "value")
         current-pos (:pos (util/get-caret-pos input))
         prefix (subs edit-content 0 current-pos)
+        space? (when last-pattern
+                 (let [s (when-let [last-index (string/last-index-of prefix last-pattern)]
+                           (util/safe-subs prefix 0 last-index))]
+                   (not (and (string/ends-with? s "(")
+                             (or (string/starts-with? last-pattern "((")
+                                 (string/starts-with? last-pattern "[["))))))
         prefix (if (string/blank? last-pattern)
-                 (util/concat-without-spaces prefix value)
-                 (util/replace-last last-pattern prefix value))
+                 (if space?
+                   (util/concat-without-spaces prefix value)
+                   (str prefix value))
+                 (util/replace-last last-pattern prefix value space?))
         postfix (subs edit-content current-pos)
         postfix (if postfix-fn (postfix-fn postfix) postfix)
-        new-value (util/concat-without-spaces prefix postfix)
+        new-value (if space?
+                    (util/concat-without-spaces prefix postfix)
+                    (str prefix postfix))
         new-pos (- (+ (count prefix)
                       (or forward-pos 0))
                    (or backward-pos 0))]
@@ -254,6 +291,26 @@
     (util/move-cursor-to input new-pos)
     (when check-fn
       (check-fn new-value (dec (count prefix)) new-pos))))
+
+(defn insert-before!
+  [id value
+   {:keys [backward-pos forward-pos check-fn]
+    :as option}]
+  (let [input (gdom/getElement id)
+        edit-content (gobj/get input "value")
+        current-pos (:pos (util/get-caret-pos input))
+        suffix (subs edit-content 0 current-pos)
+        new-value (str value
+                       suffix
+                       (subs edit-content current-pos))
+        new-pos (- (+ (count suffix)
+                      (count value)
+                      (or forward-pos 0))
+                   (or backward-pos 0))]
+    (state/set-block-content-and-last-pos! id new-value new-pos)
+    (util/move-cursor-to input new-pos)
+    (when check-fn
+      (check-fn new-value (dec (count suffix)) new-pos))))
 
 (defn simple-replace!
   [id value selected
@@ -416,8 +473,15 @@
 (defmethod handle-step :editor/show-input [[_ option]]
   (state/set-editor-show-input! option))
 
-(defmethod handle-step :editor/show-date-picker [[_]]
-  (state/set-editor-show-date-picker! true))
+(defmethod handle-step :editor/show-date-picker [[_ type]]
+  (if (and
+       (contains? #{:scheduled :deadline} type)
+       (when-let [value (gobj/get (state/get-input) "value")]
+         (string/blank? value)))
+    (do
+      (notification/show! [:div "Please add some content first."] :warning)
+      (restore-state false))
+    (state/set-editor-show-date-picker! true)))
 
 (defmethod handle-step :editor/click-hidden-file-input [[_ input-id]]
   (when-let [input-file (gdom/getElement "upload-file")]

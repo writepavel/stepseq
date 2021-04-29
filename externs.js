@@ -17,6 +17,9 @@ dummy.getRangeAt = function() {};
 dummy.getElementsByClassName = function() {};
 dummy.containsNode = function() {};
 dummy.select = function() {};
+dummy.search = function() {};
+dummy.add = function() {};
+dummy.remove = function() {};
 dummy.closest = function () {};
 dummy.setAttribute = function() {};
 dummy.getAttribute = function() {};
@@ -55,6 +58,12 @@ dummy.concat = function() {};
 dummy.diff_main = function() {};
 dummy.patch_make = function() {};
 dummy.patch_apply = function() {};
+dummy.prepare = function() {};
+dummy.run = function() {};
+dummy.all = function() {};
+dummy.transaction = function() {};
+dummy.getPath = function() {};
+
 
 /**
  * @typedef {{

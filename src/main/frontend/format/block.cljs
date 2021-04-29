@@ -9,7 +9,9 @@
             [datascript.core :as d]
             [frontend.date :as date]
             [frontend.text :as text]
-            [medley.core :as medley]))
+            [medley.core :as medley]
+            [frontend.state :as state]
+            [frontend.db :as db]))
 
 (defn heading-block?
   [block]
@@ -34,10 +36,12 @@
                    (= typ "Search")
                    ;; FIXME: alert error
                    (not (contains? #{\# \* \/ \[} (first (second (:url (second block))))))
-                   (let [page (second (:url (second block)))]
-                     (when (and (not (util/starts-with? page "http"))
-                                (not (util/starts-with? page "file"))
-                                (not (string/ends-with? page ".html")))
+                   (let [page (second (:url (second block)))
+                         ext (some-> (util/get-file-ext page) keyword)]
+                     (when (and (not (util/starts-with? page "http:"))
+                                (not (util/starts-with? page "https:"))
+                                (not (util/starts-with? page "file:"))
+                                (or (= ext :excalidraw) (not (contains? (config/supported-formats) ext))))
                        page)))
 
                   (and
@@ -56,17 +60,35 @@
                (and (vector? block)
                     (= "Macro" (first block)))
                (let [{:keys [name arguments]} (second block)]
-                 (when (and (= name "embed")
-                            (string? (first arguments))
-                            (string/starts-with? (first arguments) "[[")
-                            (string/ends-with? (first arguments) "]]"))
-                   (subs (first arguments) 2 (- (count (first arguments)) 2))))
+                 (let [argument (string/join ", " arguments)]
+                   (when (and (= name "embed")
+                              (string? argument)
+                              (text/page-ref? argument))
+                     (text/page-ref-un-brackets! argument))))
+
+               (and (vector? block)
+                    (= "Tag" (first block)))
+               (let [text (second block)]
+                 (when (and
+                        (string? text)
+                        (text/page-ref? text))
+                   (text/page-ref-un-brackets! text)))
+
                :else
                nil)]
-    (when (and
-           (string? page)
-           (not (string/blank? page)))
-      (string/trim page))))
+    (cond
+      (and
+       (string? page)
+       (text/block-ref? page))
+      (text/block-ref-un-brackets! page)
+
+      (and
+       (string? page)
+       (not (string/blank? page)))
+      (string/trim page)
+
+      :else
+      nil)))
 
 (defn get-block-reference
   [block]
@@ -141,28 +163,46 @@
       (update "created_at" util/safe-parse-int)
       (update "last_modified_at" util/safe-parse-int)))
 
+(defonce non-parsing-properties
+  (atom #{"background_color"}))
+
 (defn extract-properties
   [[_ properties] _start-pos _end-pos]
   (let [properties (into {} properties)
         page-refs (->>
                    (map (fn [v]
-                          (when v
-                            (->> (re-seq text/page-ref-re v)
-                                 (map second)
-                                 (map string/lower-case))))
+                          (when (string? v)
+                            (let [page-refs (->> (re-seq text/page-ref-re v)
+                                                 (map second))
+                                  tags (->> (string/split v #",")
+                                            (filter (fn [s] (= \# (first s))))
+                                            (map (fn [s] (subs s 1))))]
+                              (concat page-refs tags))))
                         (vals properties))
                    (apply concat)
-                   (distinct))
+                   (remove string/blank?))
         properties (->> properties
                         (medley/map-kv (fn [k v]
-                                         (let [k' (and k (string/trim (string/lower-case k)))
-                                               v' (and v (string/trim v))
-                                               v' (if (and k' v'
-                                                           (contains? config/markers k')
-                                                           (util/safe-parse-int v'))
-                                                    (util/safe-parse-int v')
-                                                    (text/split-page-refs-without-brackets v'))]
-                                           [k' v'])))
+                                         (let [v (string/trim v)
+                                               k (string/replace k " " "_")]
+                                           (cond
+                                             (and (= "\"" (first v) (last v))) ; wrapped in ""
+                                             [(string/lower-case k) (string/trim (subs v 1 (dec (count v))))]
+
+                                             (contains? @non-parsing-properties (string/lower-case k))
+                                             [(string/lower-case k) v]
+
+                                             :else
+                                             (let [k' (and k (string/trim (string/lower-case k)))
+                                                   v' v
+                                                   ;; built-in collections
+                                                   comma? (contains? #{"tags" "alias"} k)
+                                                   v' (if (and k' v'
+                                                               (contains? config/markers k')
+                                                               (util/safe-parse-int v'))
+                                                        (util/safe-parse-int v')
+                                                        (text/split-page-refs-without-brackets v' comma?))]
+                                               [k' v'])))))
                         (->schema-properties))]
     {:properties properties
      :page-refs page-refs}))
@@ -223,8 +263,18 @@
            (swap! ref-pages conj tag)))
        form)
      (concat title body))
-    (let [ref-pages (remove string/blank? @ref-pages)]
-      (assoc block :ref-pages (vec ref-pages)))))
+    (let [ref-pages (remove string/blank? @ref-pages)
+          children-pages (->> (mapcat (fn [p]
+                                        (when (and (string/includes? p "/")
+                                                   (not (string/starts-with? p "../"))
+                                                   (not (string/starts-with? p "./"))
+                                                   (not (string/starts-with? p "http")))
+                                          ;; Don't create the last page for now
+                                          (butlast (string/split p #"/"))))
+                                      ref-pages)
+                              (remove string/blank?))
+          ref-pages (distinct (concat ref-pages children-pages))]
+      (assoc block :ref-pages ref-pages))))
 
 (defn with-block-refs
   [{:keys [title body] :as block}]
@@ -269,12 +319,52 @@
 (defn safe-blocks
   [blocks]
   (map (fn [block]
-         (block-keywordize (util/remove-nils block)))
+         (if (map? block)
+           (block-keywordize (util/remove-nils block))
+           block))
        blocks))
+
+(defn with-path-refs
+  [blocks]
+  (loop [blocks blocks
+         acc []
+         parents []]
+    (if (empty? blocks)
+      acc
+      (let [block (first blocks)
+            cur-level (:block/level block)
+            level-diff (- cur-level
+                          (get (last parents) :block/level 0))
+            [path-refs parents]
+            (cond
+              (zero? level-diff)            ; sibling
+              (let [path-refs (mapcat :block/ref-pages (drop-last parents))
+                    parents (conj (vec (butlast parents)) block)]
+                [path-refs parents])
+
+              (> level-diff 0)              ; child
+              (let [path-refs (mapcat :block/ref-pages parents)]
+                [path-refs (conj parents block)])
+
+              (< level-diff 0)              ; new parent
+              (let [parents (vec (take-while (fn [p] (< (:block/level p) cur-level)) parents))
+                    path-refs (mapcat :block/ref-pages parents)]
+                [path-refs (conj parents block)]))
+            path-ref-pages (->> path-refs
+                                (concat (:block/ref-pages block))
+                                (remove string/blank?)
+                                (map string/lower-case)
+                                (distinct)
+                                (map (fn [p]
+                                       {:page/name p})))]
+        (recur (rest blocks)
+               (conj acc (assoc block :block/path-ref-pages path-ref-pages))
+               parents)))))
 
 (defn extract-blocks
   [blocks last-pos encoded-content]
-  (let [blocks
+  (let [pre-block-body (atom nil)
+        blocks
         (loop [headings []
                block-body []
                blocks (reverse blocks)
@@ -344,38 +434,43 @@
                 :else
                 (let [block-body' (conj block-body block)]
                   (recur headings block-body' (rest blocks) timestamps properties last-pos last-level children))))
-            (-> (reverse headings)
-                safe-blocks)))]
+            (do
+              (when (seq block-body)
+                (reset! pre-block-body block-body))
+              (-> (reverse headings)
+                  safe-blocks))))]
     (let [first-block (first blocks)
-          first-block-start-pos (get-in first-block [:block/meta :start-pos])]
-      (if (and
-           (not (string/blank? encoded-content))
-           (or (empty? blocks)
-               (> first-block-start-pos 1)))
-        (cons
-         (merge
-          (let [content (utf8/substring encoded-content 0 first-block-start-pos)
-                uuid (d/squuid)]
-            (->
-             {:uuid uuid
-              :content content
-              :anchor (str uuid)
-              :level 2
-              :meta {:start-pos 0
-                     :end-pos (or first-block-start-pos
-                                  (utf8/length encoded-content))}
-              :body (take-while (fn [block] (not (heading-block? block))) blocks)
-              :pre-block? true}
-             (block-keywordize)))
-          (select-keys first-block [:block/file :block/format :block/page]))
-         blocks)
-        blocks))))
+          first-block-start-pos (get-in first-block [:block/meta :start-pos])
+          blocks (if (and
+                      (not (string/blank? encoded-content))
+                      (or (empty? blocks)
+                          (> first-block-start-pos 1)))
+                   (cons
+                    (merge
+                     (let [content (utf8/substring encoded-content 0 first-block-start-pos)
+                           uuid (d/squuid)]
+                       (->
+                        {:uuid uuid
+                         :content content
+                         :anchor (str uuid)
+                         :level 2
+                         :meta {:start-pos 0
+                                :end-pos (or first-block-start-pos
+                                             (utf8/length encoded-content))}
+                         :body @pre-block-body
+                         ;; (take-while (fn [block] (not (heading-block? block))) blocks)
+                         :pre-block? true}
+                        (block-keywordize)))
+                     (select-keys first-block [:block/file :block/format :block/page]))
+                    blocks)
+                   blocks)]
+      (with-path-refs blocks))))
 
 (defn- page-with-journal
   [original-page-name]
   (when original-page-name
     (let [page-name (string/lower-case original-page-name)]
-      (if-let [d (date/journal-title->int (string/capitalize page-name))]
+      (if-let [d (date/journal-title->int page-name)]
         {:page/name page-name
          :page/original-name original-page-name
          :page/journal? true
@@ -394,10 +489,18 @@
            content-length (utf8/length encoded-content)
            blocks (extract-blocks ast content-length encoded-content)
            ref-pages-atom (atom [])
+           parent-ref-pages (->> (db/get-block-parent (state/get-current-repo) uuid)
+                                 :block/path-ref-pages
+                                 (map :db/id))
            blocks (doall
                    (map-indexed
                     (fn [idx {:block/keys [ref-pages ref-blocks meta] :as block}]
-                      (let [block (merge
+                      (let [path-ref-pages (->> ref-pages
+                                                (remove string/blank?)
+                                                (map string/lower-case)
+                                                (map (fn [p] [:page/name p]))
+                                                (concat parent-ref-pages))
+                            block (merge
                                    block
                                    {:block/meta meta
                                     :block/marker (get block :block/marker "nil")
@@ -407,12 +510,10 @@
                                     :block/page page
                                     :block/content (utf8/substring encoded-content
                                                                    (:start-pos meta)
-                                                                   (:end-pos meta))}
+                                                                   (:end-pos meta))
+                                    :block/path-ref-pages path-ref-pages}
                                    ;; Preserve the original block id
-                                   (when (and (zero? idx)
-                                              ;; not custom-id
-                                              (not (get-in block [:block/properties "custom_id"]))
-                                              (not (get-in block [:block/properties "id"])))
+                                   (when (zero? idx)
                                      {:block/uuid uuid})
                                    (when (seq ref-pages)
                                      {:block/ref-pages
@@ -457,5 +558,4 @@
 
 (defn trim-break-lines!
   [ast]
-  (->> (drop-while break-line-paragraph? ast)
-       (take-while (complement break-line-paragraph?))))
+  (drop-while break-line-paragraph? ast))

@@ -17,6 +17,7 @@
             [frontend.storage :as storage]
             [frontend.util :as util]
             [frontend.state :as state]
+            [frontend.handler.ui :as ui-handler]
             [frontend.handler.user :as user-handler]
             [frontend.handler.editor :as editor-handler]
             [frontend.handler.route :as route-handler]
@@ -55,16 +56,16 @@
         left-sidebar? (state/sub :ui/left-sidebar-open?)]
     (when left-sidebar?
       [:nav.flex-1.left-sidebar-inner
-       (nav-item "Journals" "/"
+       (nav-item "Journals" "#/"
                  "M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10M9 21h6"
                  (active? :home)
                  close-modal-fn)
-       (nav-item "All Pages" "/all-pages"
+       (nav-item "All Pages" "#/all-pages"
                  "M6 2h9a1 1 0 0 1 .7.3l4 4a1 1 0 0 1 .3.7v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.1.9-2 2-2zm9 2.41V7h2.59L15 4.41zM18 9h-3a2 2 0 0 1-2-2V4H6v16h12V9zm-2 7a1 1 0 0 1-1 1H9a1 1 0 0 1 0-2h6a1 1 0 0 1 1 1zm0-4a1 1 0 0 1-1 1H9a1 1 0 0 1 0-2h6a1 1 0 0 1 1 1zm-5-4a1 1 0 0 1-1 1H9a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1z"
                  (active? :all-pages)
                  close-modal-fn)
        (when-not config/publishing?
-         (nav-item "All Files" "/all-files"
+         (nav-item "All Files" "#/all-files"
                    "M3 7V17C3 18.1046 3.89543 19 5 19H19C20.1046 19 21 18.1046 21 17V9C21 7.89543 20.1046 7 19 7H13L11 5H5C3.89543 5 3 5.89543 3 7Z"
                    (active? :all-files)
                    close-modal-fn))
@@ -99,14 +100,14 @@
            :stroke-linejoin "round"
            :stroke-linecap "round"}]]]])
     [:div.flex-shrink-0.flex.items-center.px-4.h-16.head-wrap
-     (repo/repos-dropdown false nil)]
+     (repo/repos-dropdown nil)]
     [:div.flex-1.h-0.overflow-y-auto
      (sidebar-nav route-match close-fn)]]])
 
-(rum/defc sidebar-main
+(rum/defc main
   [{:keys [route-match global-graph-pages? logged? home? route-name indexeddb-support? white? db-restoring? main-content]}]
   (rum/with-context [[t] i18n/*tongue-context*]
-    [:div#main-content.cp__sidebar-main-layout
+    [:div#main-content.cp__sidebar-main-layout.flex-1.flex
      [:div#sidebar-nav-wrapper.flex-col.pt-4.hidden.sm:block
       {:style {:flex (if (state/get-left-sidebar-open?)
                        "0 1 20%"
@@ -115,7 +116,8 @@
                                   (if white? "#f0f8ff" "#073642"))}}
       (when (state/sub :ui/left-sidebar-open?)
         (sidebar-nav route-match nil))]
-     [:div#main-content-container.cp__sidebar-main-content-container
+     [:div#main-content-container.w-full.flex.justify-center
+      {:style {:margin-top (if global-graph-pages? 0 "2rem")}}
       [:div.cp__sidebar-main-content
        {:data-is-global-graph-pages global-graph-pages?
         :data-is-full-width (or global-graph-pages?
@@ -130,9 +132,9 @@
            (ui/loading (t :loading))]]
 
          :else
-         [:div {:style {:margin-bottom (if global-graph-pages? 0 120)}}
-          main-content])]]
-     (right-sidebar/sidebar)]))
+         [:div.pb-24 {:class (if global-graph-pages? "" (util/hiccup->class "max-w-7xl.mx-auto"))
+                      :style {:margin-bottom (if global-graph-pages? 0 120)}}
+          main-content])]]]))
 
 (defn get-default-home-if-valid
   []
@@ -175,13 +177,18 @@
         preferred-format (state/sub [:me :preferred_format])
         logged? (:name me)]
     (rum/with-context [[t] i18n/*tongue-context*]
-      [:div.max-w-7xl.mx-auto
+      [:div
        (cond
          (and default-home
               (= :home (state/get-current-route))
               (not (state/route-has-p?)))
          (route-handler/redirect! {:to :page
                                    :path-params {:name (:page default-home)}})
+
+         (and config/publishing?
+              (not default-home)
+              (empty? latest-journals))
+         (route-handler/redirect! {:to :all-pages})
 
          importing-to-db?
          (ui/loading (t :parsing-files))
@@ -222,7 +229,7 @@
                   :exit 300}}
        links
        ;; (custom-context-menu-content)
-))))
+       ))))
 
 (rum/defc new-block-mode < rum/reactive
   []
@@ -243,6 +250,21 @@
                     (state/sidebar-add-block! (state/get-current-repo) "help" :help nil))}
        "?"])))
 
+(rum/defc settings-modal
+  [settings-open?]
+  (rum/use-effect!
+   (fn []
+     (if settings-open?
+       (state/set-modal!
+        (fn [close-fn]
+          (gobj/set close-fn "user-close" #(ui-handler/toggle-settings-modal!))
+          [:div.settings-modal (settings/settings)]))
+       (state/set-modal! nil))
+
+     (util/lock-global-scroll settings-open?)
+     #())
+   [settings-open?]) nil)
+
 (rum/defcs sidebar <
   (mixins/modal :modal/show?)
   rum/reactive
@@ -254,10 +276,9 @@
                       ;; hide context menu
                       (state/hide-custom-context-menu!)
 
-                      (if-not (state/get-selection-start-block)
-                        (editor-handler/clear-selection! e)
-                        (state/set-selection-start-block! nil))))
+                      (editor-handler/clear-selection! e)))
 
+     ;; TODO: move to keyboards
      (mixins/on-key-down
       state
       {;; esc
@@ -275,22 +296,10 @@
        ;; ?
        191 (fn [state e]
              (when-not (util/input? (gobj/get e "target"))
-               (state/sidebar-add-block! (state/get-current-repo) "help" :help nil)))
-       ;; c
-       67 (fn [state e]
-            (when (and (not (util/input? (gobj/get e "target")))
-                       (not (gobj/get e "shiftKey"))
-                       (not (gobj/get e "ctrlKey"))
-                       (not (gobj/get e "altKey"))
-                       (not (gobj/get e "metaKey")))
-              (when-let [repo-url (state/get-current-repo)]
-                (when-not (state/get-edit-input-id)
-                  (util/stop e)
-                  (state/set-modal! commit/add-commit-message)))))})))
+               (ui-handler/toggle-help!)))})))
   {:did-mount (fn [state]
                 (keyboards/bind-shortcuts!)
                 state)}
-  (mixins/keyboards-mixin keyboards/keyboards)
   [state route-match main-content]
   (let [{:keys [open? close-fn open-fn]} state
         close-fn (fn []
@@ -298,9 +307,11 @@
                    (state/set-left-sidebar-open! false))
         me (state/sub :me)
         current-repo (state/sub :git/current-repo)
+        granted? (state/sub [:nfs/user-granted? (state/get-current-repo)])
         theme (state/sub :ui/theme)
         white? (= "white" (state/sub :ui/theme))
-        sidebar-open? (state/sub :ui/sidebar-open?)
+        settings-open? (state/sub :ui/settings-open?)
+        sidebar-open?  (state/sub :ui/sidebar-open?)
         route-name (get-in route-match [:data :name])
         global-graph-pages? (= :graph route-name)
         logged? (:name me)
@@ -311,38 +322,44 @@
         default-home (get-default-home-if-valid)]
     (rum/with-context [[t] i18n/*tongue-context*]
       (theme/container
-       {:theme theme
-        :on-click editor-handler/unhighlight-block!}
+       {:theme         theme
+        :route         route-match
+        :nfs-granted?  granted?
+        :db-restoring? db-restoring?
+        :on-click      editor-handler/unhighlight-block!}
 
        [:div.theme-inner
         (sidebar-mobile-sidebar
          {:open?       open?
           :close-fn    close-fn
           :route-match route-match})
-        [:div.#app-container.cp__sidebar-layout
-         {:class (if sidebar-open? "is-right-sidebar-open")}
-         (header/header {:open-fn        open-fn
-                         :white?         white?
-                         :current-repo   current-repo
-                         :logged?        logged?
-                         :page?          page?
-                         :route-match    route-match
-                         :me             me
-                         :default-home   default-home
-                         :new-block-mode new-block-mode})
+        [:div.#app-container.h-screen.flex
+         [:div.flex-1.h-full.flex.flex-col.overflow-y-auto#left-container.relative
+          [:div
+           (header/header {:open-fn        open-fn
+                           :white?         white?
+                           :current-repo   current-repo
+                           :logged?        logged?
+                           :page?          page?
+                           :route-match    route-match
+                           :me             me
+                           :default-home   default-home
+                           :new-block-mode new-block-mode})
 
-         (sidebar-main {:route-match         route-match
-                        :global-graph-pages? global-graph-pages?
-                        :logged?             logged?
-                        :home?               home?
-                        :route-name          route-name
-                        :indexeddb-support?  indexeddb-support?
-                        :white?              white?
-                        :db-restoring?       db-restoring?
-                        :main-content        main-content})]
+           (main {:route-match         route-match
+                  :global-graph-pages? global-graph-pages?
+                  :logged?             logged?
+                  :home?               home?
+                  :route-name          route-name
+                  :indexeddb-support?  indexeddb-support?
+                  :white?              white?
+                  :db-restoring?       db-restoring?
+                  :main-content        main-content})]]
+         (right-sidebar/sidebar)]
 
         (ui/notification)
         (ui/modal)
+        (settings-modal settings-open?)
         (custom-context-menu)
         [:a#download.hidden]
         (when
@@ -355,4 +372,4 @@
          ;;   :on-click (fn []
          ;;               (state/set-left-sidebar-open! (not (state/get-left-sidebar-open?))))}
          ;;  (if (state/sub :ui/left-sidebar-open?) "<" ">")]
-)]))))
+          )]))))

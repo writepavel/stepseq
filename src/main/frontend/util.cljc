@@ -1,4 +1,5 @@
 (ns frontend.util
+  #?(:clj (:refer-clojure :exclude [format]))
   (:require
       #?(:cljs [cljs-bean.core :as bean])
       #?(:cljs [cljs-time.coerce :as tc])
@@ -8,6 +9,7 @@
       #?(:cljs ["/frontend/caret_pos" :as caret-pos])
       #?(:cljs ["/frontend/selection" :as selection])
       #?(:cljs ["/frontend/utils" :as utils])
+      #?(:cljs ["path" :as nodePath])
       #?(:cljs [goog.dom :as gdom])
       #?(:cljs [goog.object :as gobj])
       #?(:cljs [goog.string :as gstring])
@@ -29,13 +31,14 @@
       (-pr-writer [sym writer _]
         (-write writer (str "\"" (.toString sym) "\"")))))
 
-;; doms
-#?(:cljs (defn html-node []  js/document.documentElement))
+#?(:cljs (defonce ^js node-path nodePath))
+#?(:cljs (defn app-scroll-container-node []
+           (gdom/getElement "left-container")))
 
 #?(:cljs
     (defn ios?
       []
-      (not (nil? (re-find #"iPad|iPhone|iPod" js/navigator.userAgent)))))
+      (utils/ios)))
 
 #?(:cljs
     (defn safari?
@@ -49,6 +52,18 @@
       []
       (when-not node-test?
         (re-find #"Mobi" js/navigator.userAgent))))
+
+#?(:cljs
+   (defn electron?
+     []
+     (when (and js/window (gobj/get js/window "navigator"))
+       (let [ua (string/lower-case js/navigator.userAgent)]
+         (string/includes? ua " electron")))))
+
+#?(:cljs
+   (defn file-protocol?
+     []
+     (string/starts-with? js/window.location.href "file://")))
 
 (defn format
   [fmt & args]
@@ -143,6 +158,10 @@
   (->> (map (fn [entry] [(get entry k) entry])
             col)
        (into {})))
+
+(defn ext-of-image? [s]
+  (some #(string/ends-with? s %)
+        [".png" ".jpg" ".jpeg" ".bmp" ".gif" ".webp"]))
 
 ;; ".lg:absolute.lg:inset-y-0.lg:right-0.lg:w-1/2"
 (defn hiccup->class
@@ -326,34 +345,25 @@
               (string/split #"\?")
               (first))))))
 
-;; (defn scroll-into-view
-;;   [element]
-;;   (let [scroll-top (gobj/get element "offsetTop")
-;;         scroll-top (if (zero? scroll-top)
-;;                      (-> (gobj/get element "parentElement")
-;;                          (gobj/get "offsetTop"))
-;;                      scroll-top)]
-;;     (prn {:scroll-top scroll-top})
-;;     (when-let [main (gdom/getElement "main-content")]
-;;       (prn {:main main})
-;;       (.scroll main #js {:top scroll-top
-;;                          ;; :behavior "smooth"
-;;                          }))))
-
-;; (defn scroll-to-element
-;;   [fragment]
-;;   (when fragment
-;;     (prn {:fragment fragment})
-;;     (when-not (string/blank? fragment)
-;;       (when-let [element (gdom/getElement fragment)]
-;;         (scroll-into-view element)))))
+#?(:cljs
+   (defn fragment-with-anchor
+     [anchor]
+     (let [fragment (get-fragment)]
+       (str "#" fragment "?anchor=" anchor))))
 
 (def speed 500)
 (def moving-frequency 15)
 
 #?(:cljs
-    (defn cur-doc-top []
-      (.. js/document -documentElement -scrollTop)))
+   (defn cur-doc-top []
+     (.. js/document -documentElement -scrollTop)))
+
+#?(:cljs
+   (defn lock-global-scroll
+     ([] (lock-global-scroll true))
+     ([v] (js-invoke (.-classList (app-scroll-container-node))
+                     (if v "add" "remove")
+                     "locked-scroll"))))
 
 #?(:cljs
     (defn element-top [elem top]
@@ -370,26 +380,28 @@
       (when-not (re-find #"^/\d+$" elem-id)
         (when elem-id
           (when-let [elem (gdom/getElement elem-id)]
-            (.scroll (html-node)
+            (.scroll (app-scroll-container-node)
                      #js {:top (let [top (element-top elem 0)]
-                                 (if (> top 68)
-                                   (- top 68)
-                                   top))
+                                 (if (< top 256)
+                                   0
+                                   (- top 80)))
                           :behavior "smooth"}))))))
 
 #?(:cljs
-    (defn scroll-to
-      ([pos]
-       (scroll-to (html-node) pos))
-      ([node pos]
-       (.scroll node
-                #js {:top      pos
-                     :behavior "smooth"}))))
+   (defn scroll-to
+     ([pos]
+      (scroll-to (app-scroll-container-node) pos))
+     ([node pos]
+      (scroll-to node pos true))
+     ([node pos animate?]
+      (.scroll node
+               #js {:top      pos
+                    :behavior (if animate? "smooth" "auto")}))))
 
 #?(:cljs
     (defn scroll-to-top
       []
-      (scroll-to 0)))
+      (scroll-to (app-scroll-container-node) 0 false)))
 
 (defn url-encode
   [string]
@@ -442,7 +454,7 @@
 
 (defn journal?
   [path]
-  (starts-with? path "journals/"))
+  (string/includes? path "journals/"))
 
 (defn drop-first-line
   [s]
@@ -576,11 +588,15 @@
   (when-let [first-index (string/index-of s pattern)]
     (str new-value (subs s (+ first-index (count pattern))))))
 
-(defn replace-last [pattern s new-value]
-  (when-let [last-index (string/last-index-of s pattern)]
-    (concat-without-spaces
-     (subs s 0 last-index)
-     new-value)))
+(defn replace-last
+  ([pattern s new-value]
+   (replace-last pattern s new-value true))
+  ([pattern s new-value space?]
+   (when-let [last-index (string/last-index-of s pattern)]
+     (let [prefix (subs s 0 last-index)]
+       (if space?
+         (concat-without-spaces prefix new-value)
+         (str prefix new-value))))))
 
 ;; copy from https://stackoverflow.com/questions/18735665/how-can-i-get-the-positions-of-regex-matches-in-clojurescript
 #?(:cljs
@@ -718,6 +734,24 @@
       (and input (.-selectionStart input))))
 
 #?(:cljs
+   (defn input-start?
+     [input]
+     (and input (zero? (.-selectionStart input)))))
+
+#?(:cljs
+   (defn input-end?
+     [input]
+     (and input
+          (= (count (.-value input))
+             (.-selectionStart input)))))
+
+#?(:cljs
+   (defn input-selected?
+     [input]
+     (not= (.-selectionStart input)
+           (.-selectionEnd input))))
+
+#?(:cljs
     (defn get-selected-text
       []
       (utils/getSelectionText)))
@@ -775,12 +809,6 @@
 (defn time-ms
   []
   #?(:cljs (tc/to-long (cljs-time.core/now))))
-
-(defn get-repo-dir
-  [repo-url]
-  (str "/"
-       (->> (take-last 2 (string/split repo-url #"/"))
-            (string/join "_"))))
 
 (defn d
   [k f]
@@ -954,6 +982,9 @@
 (defonce mac? #?(:cljs goog.userAgent/MAC
                  :clj nil))
 
+(defonce win32? #?(:cljs goog.userAgent/WINDOWS
+                 :clj nil))
+
 (defn ->system-modifier
   [keyboard-shortcut]
   (if mac?
@@ -976,8 +1007,10 @@
          new-block (case (name text-format)
                      "org"
                      "** "
+
                      "markdown"
                      "## "
+
                      "")]
      (if contents?
        new-block
@@ -994,7 +1027,7 @@
 (defn page-name-sanity
   [page-name]
   (-> page-name
-      (string/replace #"\s+" "_")
+      (string/replace #"/" ".")
       ;; Windows reserved path characters
       (string/replace #"[\\/:\\*\\?\"<>|]+" "_")))
 
@@ -1010,7 +1043,7 @@
       (when (some? style)
         (let [parent-node (d/sel1 :head)
               id "logseq-custom-theme-id"
-              old-link-element (d/sel1 id)
+              old-link-element (d/sel1 (str "#" id))
               style (if (string/starts-with? style "http")
                       style
                       (str "data:text/css;charset=utf-8," (js/encodeURIComponent style)))]
@@ -1101,6 +1134,32 @@
       (string/replace "&quot;" "\"")
       (string/replace "&apos;" "'")))
 
+#?(:cljs
+   (defn system-locales
+     []
+     (when-not node-test?
+       (when-let [navigator (and js/window (.-navigator js/window))]
+         ;; https://zzz.buzz/2016/01/13/detect-browser-language-in-javascript/
+         (when navigator
+           (let [v (js->clj
+                    (or
+                     (.-languages navigator)
+                     (.-language navigator)
+                     (.-userLanguage navigator)
+                     (.-browserLanguage navigator)
+                     (.-systemLanguage navigator)))]
+             (if (string? v) [v] v)))))))
+
+#?(:cljs
+   (defn zh-CN-supported?
+     []
+     (contains? (set (system-locales)) "zh-CN")))
+
+#?(:cljs
+   (defn get-element-width
+     [id]
+     (when-let [element (gdom/getElement id)]
+       (gobj/get element "offsetWidth"))))
 (comment
   (= (get-relative-path "journals/2020_11_18.org" "pages/grant_ideas.org")
      "../pages/grant_ideas.org")

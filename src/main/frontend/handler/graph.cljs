@@ -4,7 +4,8 @@
             [frontend.util :as util]
             [frontend.date :as date]
             [frontend.state :as state]
-            [clojure.set :as set]))
+            [clojure.set :as set]
+            [medley.core :as medley]))
 
 (defn- build-edges
   [edges]
@@ -24,23 +25,43 @@
   [dark? current-page edges tags nodes]
   (let [pages (->> (set (flatten nodes))
                    (remove nil?))]
-    (mapv (fn [p]
-            (let [current-page? (= p current-page)
-                  color (case [dark? current-page?] ; FIXME: Put it into CSS
-                          [false false] "#222222"
-                          [false true]  "#045591"
-                          [true false]  "#8abbbb"
-                          [true true]   "#ffffff")
-                  color (if (contains? tags (string/lower-case p))
-                          (if dark? "orange" "green")
-                          color)]
-              {:id p
-               :name p
-               :val (get-connections p edges)
-               :autoColorBy "group"
-               :group (js/Math.ceil (* (js/Math.random) 12))
-               :color color}))
-          pages)))
+    (->>
+     (mapv (fn [p]
+             (when p
+               (let [p (str p)
+                     current-page? (= p current-page)
+                     block? (and p (util/uuid-string? p))
+                     color (if block?
+                             "#1a6376"
+                             (case [dark? current-page?] ; FIXME: Put it into CSS
+                              [false false] "#222222"
+                              [false true]  "#045591"
+                              [true false]  "#8abbbb"
+                              [true true]   "#ffffff"))
+                     color (if (contains? tags (string/lower-case (str p)))
+                             (if dark? "orange" "green")
+                             color)]
+                 {:id p
+                  :name p
+                  :val (get-connections p edges)
+                  :autoColorBy "group"
+                  :group (js/Math.ceil (* (js/Math.random) 12))
+                  :color color})))
+           pages)
+     (remove nil?))))
+
+(defn- uuid-or-asset?
+  [id]
+  (or (util/uuid-string? id)
+      (string/starts-with? id "../assets/")
+      (= id "..")
+      (string/starts-with? id "assets/")))
+
+(defn- remove-uuids-and-files!
+  [nodes]
+  (remove
+   (fn [node] (uuid-or-asset? (:id node)))
+   nodes))
 
 (defn- normalize-page-name
   [{:keys [nodes links] :as g}]
@@ -53,10 +74,15 @@
         names (zipmap (map :page/name names)
                       (map (fn [x] (get x :page/original-name (:page/name x))) names))
         nodes (mapv (fn [node] (assoc node :id (get names (:id node)))) nodes)
-        links (mapv (fn [{:keys [source target]}]
-                      {:source (get names source)
-                       :target (get names target)})
-                    links)]
+        links (->>
+               (mapv (fn [{:keys [source target]}]
+                       (when (and (not (uuid-or-asset? source))
+                                  (not (uuid-or-asset? target)))
+                         {:source (get names source)
+                          :target (get names target)}))
+                     links)
+               (remove nil?))
+        nodes (remove-uuids-and-files! nodes)]
     {:nodes nodes
      :links links}))
 
@@ -179,5 +205,6 @@
                        (distinct)
                        ;; FIXME: get block tags
                        (build-nodes dark? block edges #{}))]
-        {:nodes nodes
-         :links edges}))))
+        (normalize-page-name
+         {:nodes nodes
+          :links edges})))))

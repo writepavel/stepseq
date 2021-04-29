@@ -1,15 +1,30 @@
 .cp__header {
-  @apply shadow z-10 h-12 pr-4;
+  @apply shadow z-10 h-12;
 
+  padding-right: 1rem;
   display: flex;
   align-items: center;
   flex: 0 0 auto;
   background-color: var(--ls-primary-background-color, #fff);
-
-  position: fixed;
-  width: 100%;
+  position: sticky;
+  position: -webkit-sticky;
   top: 0;
   left: 0;
+  right: 0;
+  user-select: none;
+  transition: width 0.3s;
+
+  .it svg {
+    transform: scale(0.8);
+  }
+
+  .repos {
+    .dropdown-wrapper {
+      left: unset;
+      right: -46px;
+      min-width: 14rem;
+    }
+  }
 }
 
 .cp__header-left-menu {
@@ -32,7 +47,10 @@
 
 .cp__header-logo,
 .cp__right-menu-button {
-  opacity: 0.7;
+  opacity: 0.3;
+}
+
+.cp__header-logo {
   display: none;
 }
 
@@ -50,6 +68,10 @@
   @apply ml-3;
 }
 
+.cp__right-menu-button {
+  display: block;
+}
+
 @screen sm {
   .cp__header {
     @apply shadow-none;
@@ -63,8 +85,14 @@
     display: flex;
     align-items: center;
   }
+}
 
-  .cp__right-menu-button {
-    display: block;
-  }
+#repo-name {
+  @apply md:max-w-none;
+  vertical-align: middle;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 7ch;
 }

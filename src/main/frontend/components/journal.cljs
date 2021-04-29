@@ -1,5 +1,6 @@
 (ns frontend.components.journal
   (:require [rum.core :as rum]
+            [reitit.frontend.easy :as rfe]
             [frontend.util :as util :refer-macros [profile]]
             [frontend.config :as config]
             [frontend.date :as date]
@@ -8,6 +9,7 @@
             [frontend.handler.page :as page-handler]
             [frontend.handler.editor :as editor-handler]
             [frontend.db :as db]
+            [frontend.db.model :as model]
             [frontend.state :as state]
             [frontend.ui :as ui]
             [frontend.config :as config]
@@ -20,7 +22,8 @@
             [frontend.components.onboarding :as onboarding]
             [goog.object :as gobj]
             [clojure.string :as string]
-            [frontend.handler.block :as block-handler]))
+            [frontend.handler.block :as block-handler]
+            [frontend.text :as text]))
 
 (rum/defc blocks-inner < rum/static
   {:did-mount (fn [state]
@@ -67,27 +70,33 @@
   (let [;; Don't edit the journal title
         page (string/lower-case title)
         repo (state/sub :git/current-repo)
-        encoded-page-name (util/encode-str page)
         today? (= (string/lower-case title)
                   (string/lower-case (date/journal-name)))
         intro? (and (not (state/logged?))
                     (not (config/local-db? repo))
                     (not config/publishing?)
-                    today?)]
-    [:div.flex-1.journal.page {:class (if intro? "intro" "")}
+                    today?)
+        page-entity (db/pull [:page/name (string/lower-case title)])
+        data-page-tags (when (seq (:page/tags page-entity))
+                         (let [page-names (model/get-page-names-by-ids (map :db/id (:page/tags page)))]
+                           (text/build-data-value page-names)))]
+    [:div.flex-1.journal.page (cond->
+                               {:class (if intro? "intro" "")}
+                                data-page-tags
+                                (assoc :data-page-tags data-page-tags))
      (ui/foldable
       [:a.initial-color.title
-       {:href (str "/page/" encoded-page-name)
+       {:href     (rfe/href :page {:name page})
         :on-click (fn [e]
-                    (.preventDefault e)
                     (when (gobj/get e "shiftKey")
-                      (when-let [page (db/pull [:page/name (string/lower-case title)])]
+                      (when-let [page page-entity]
                         (state/sidebar-add-block!
                          (state/get-current-repo)
                          (:db/id page)
                          :page
-                         {:page page
-                          :journal? true}))))}
+                         {:page     page
+                          :journal? true}))
+                      (.preventDefault e)))}
        [:h1.title
         (util/capitalize-all title)]]
 
@@ -101,18 +110,16 @@
 
      (when intro? (onboarding/intro))]))
 
-(rum/defc journals <
-  {:did-mount (fn [state]
-                (editor-handler/open-last-block! true)
-                state)}
+(rum/defc journals < rum/reactive
   [latest-journals]
   [:div#journals
-   (ui/infinite-list
-    (for [[journal-name format] latest-journals]
-      [:div.journal-item.content {:key journal-name}
-       (journal-cp [journal-name format])])
-    {:on-load (fn []
-                (page-handler/load-more-journals!))})])
+   (ui/infinite-list "left-container"
+                     (for [[journal-name format] latest-journals]
+                       [:div.journal-item.content {:key journal-name}
+                        (journal-cp [journal-name format])])
+                     {:has-more (page-handler/has-more-journals?)
+                      :on-load (fn []
+                                 (page-handler/load-more-journals!))})])
 
 (rum/defc all-journals < rum/reactive db-mixins/query
   []

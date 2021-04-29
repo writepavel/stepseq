@@ -23,11 +23,6 @@
   []
   (redirect! {:to :home}))
 
-(defn redirect-with-fragment!
-  [path]
-  (.pushState js/window.history nil "" path)
-  (rfh/-on-navigate @rfe/history path))
-
 (defn get-title
   [name path-params]
   (case name
@@ -46,7 +41,7 @@
     :all-journals
     "All journals"
     :file
-    (str "File " (util/url-decode (:path path-params)))
+    (str "File " (:path path-params))
     :new-page
     "Create a new page"
     :page
@@ -60,12 +55,12 @@
               (str (subs content 0 48) "...")
               content))
           "Page no longer exists!!")
-        (let [page (util/url-decode name)
-              page (db/pull [:page/name (string/lower-case page)])]
+        (let [page (db/pull [:page/name (string/lower-case name)])]
           (or (:page/original-name page)
-              (:page/name page)))))
+              (:page/name page)
+              "Logseq"))))
     :tag
-    (str "#" (util/url-decode (:name path-params)))
+    (str "#"  (:name path-params))
     :diff
     "Git diff"
     :draw
@@ -76,24 +71,36 @@
     "Import data into Logseq"
     "Logseq"))
 
-(defn set-route-match!
+(defn update-page-title!
   [route]
-  (swap! state/state assoc :route-match route)
   (let [{:keys [data path-params]} route
         title (get-title (:name data) path-params)]
-    (util/set-title! title)
-    (if-let [fragment (util/get-fragment)]
-      (ui-handler/highlight-element! fragment)
+    (util/set-title! title)))
+
+(defn jump-to-anchor!
+  [anchor-text]
+  (when anchor-text
+    (js/setTimeout #(ui-handler/highlight-element! anchor-text) 200)))
+
+(defn set-route-match!
+  [route]
+  (let [route route]
+    (swap! state/state assoc :route-match route)
+    (update-page-title! route)
+    (when-let [anchor (get-in route [:query-params :anchor])]
+      (jump-to-anchor! anchor)
       (util/scroll-to-top))))
 
 (defn go-to-search!
-  []
-  (when-let [element (gdom/getElement "search_field")]
+  [search-mode]
+  (when search-mode
+    (state/set-search-mode! search-mode))
+  (when-let [element (gdom/getElement "search-field")]
     (.focus element)))
 
 (defn go-to-journals!
   []
-  (state/set-journals-length! 1)
+  (state/set-journals-length! 2)
   (let [route (if (state/custom-home-page?)
                 :all-journals
                 :home)]
@@ -110,7 +117,7 @@
                 :path-params {:path path}})))
 
 (defn toggle-between-page-and-file!
-  []
+  [_e]
   (let [current-route (state/get-current-route)]
     (case current-route
       :home

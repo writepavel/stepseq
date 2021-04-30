@@ -27,7 +27,7 @@
   [name path-params]
   (case name
     :home
-    "Logseq"
+    "Stepseq"
     :repos
     "Repos"
     :repo-add
@@ -58,7 +58,7 @@
         (let [page (db/pull [:page/name (string/lower-case name)])]
           (or (:page/original-name page)
               (:page/name page)
-              "Logseq"))))
+              "Stepseq"))))
     :tag
     (str "#"  (:name path-params))
     :diff
@@ -68,8 +68,8 @@
     :settings
     "Settings"
     :import
-    "Import data into Logseq"
-    "Logseq"))
+    "Import data into Stepseq"
+    "Stepseq"))
 
 (defn update-page-title!
   [route]

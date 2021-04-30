@@ -32,7 +32,7 @@
             [frontend.components.encryption :as encryption]))
 
 ;; Project settings should be checked in two situations:
-;; 1. User changes the config.edn directly in logseq.com (fn: alter-file)
+;; 1. User changes the config.edn directly in stepseq.com (fn: alter-file)
 ;; 2. Git pulls the new change (fn: load-files)
 
 (defn show-install-error!
@@ -44,10 +44,10 @@
     " "
     [:span.mr-2
      (util/format
-      "Please make sure that you've installed the logseq app for the repo %s on GitHub. "
+      "Please make sure that you've installed the stepseq app for the repo %s on GitHub. "
       repo-url)
      (ui/button
-      "Install Logseq on GitHub"
+      "Install Stepseq on GitHub"
       :href (str "https://github.com/apps/" config/github-app-name "/installations/new"))]]
    :error
    false))
@@ -78,9 +78,9 @@
         file-path (str "/" path)
         default-content (case (name format)
                           "org"
-                          "** What's **Contents**?\n*** It's a normal page called [[Contents]], you can use it for:\n**** 1. table of content/index/MOC\n**** 2. pinning/bookmarking favorites pages/blocks (e.g. [[Logseq]])\n**** 3. You can also put many different things, depending on your personal workflow."
+                          "** What's **Contents**?\n*** It's a normal page called [[Contents]], you can use it for:\n**** 1. table of content/index/MOC\n**** 2. pinning/bookmarking favorites pages/blocks (e.g. [[Stepseq]])\n**** 3. You can also put many different things, depending on your personal workflow."
                           "markdown"
-                          "## What's **Contents**?\n### It's a normal page called [[Contents]], you can use it for:\n#### 1. table of content/index/MOC\n#### 2. pinning/bookmarking favorites pages/blocks (e.g. [[Logseq]])\n#### 3. You can also put many different things, depending on your personal workflow."
+                          "## What's **Contents**?\n### It's a normal page called [[Contents]], you can use it for:\n#### 1. table of content/index/MOC\n#### 2. pinning/bookmarking favorites pages/blocks (e.g. [[Stepseq]])\n#### 3. You can also put many different things, depending on your personal workflow."
                           "")]
     (p/let [_ (fs/mkdir-if-not-exists (str repo-dir "/" (state/get-pages-directory)))
             file-exists? (fs/create-if-not-exists repo-url repo-dir file-path default-content)]
@@ -504,7 +504,7 @@
   (spec/validate :repos/url repo-url)
   (let [status (db/get-key-value repo-url :git/status)
         commit-message (if (string/blank? commit-message)
-                         "Logseq auto save"
+                         "Stepseq auto save"
                          commit-message)]
     (when (and
            (db/cloned? repo-url)
@@ -726,4 +726,4 @@
 
 (defn auto-push!
   []
-  (git-commit-and-push! "Logseq auto save"))
+  (git-commit-and-push! "Stepseq auto save"))

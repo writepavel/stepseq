@@ -21,7 +21,7 @@ function basicAuth (username, token) {
   return "Basic " + btoa(username + ":" + token);
 }
 
-const fsName = 'logseq';
+const fsName = 'stepseq';
 const createFS = () => new LightningFS(fsName);
 let fs = createFS();
 let pfs = fs.promises;

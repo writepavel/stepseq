@@ -14,7 +14,7 @@
 ;; :TODO: How to do this?
 ;; (defonce desktop? ^boolean goog.DESKTOP)
 
-(def app-name "logseq")
+(def app-name "stepseq")
 (def website
   (if dev?
     "http://localhost:3000"
@@ -42,9 +42,9 @@
     (if dev? path
         (str asset-domain path))))
 
-(goog-define GITHUB_APP_NAME "logseq-test")
+(goog-define GITHUB_APP_NAME "stepseq-test")
 
-(def github-app-name (if dev? GITHUB_APP_NAME "logseq"))
+(def github-app-name (if dev? GITHUB_APP_NAME "stepseq"))
 
 (defn git-pull-secs
   []
@@ -289,8 +289,8 @@
   #{"now" "later" "todo" "doing" "done" "wait" "waiting"
     "canceled" "cancelled" "started" "in-progress"})
 
-(defonce idb-db-prefix "logseq-db/")
-(defonce local-db-prefix "logseq_local_")
+(defonce idb-db-prefix "stepseq-db/")
+(defonce local-db-prefix "stepseq_local_")
 (defonce local-handle "handle")
 (defonce local-handle-prefix (str local-handle "/" local-db-prefix))
 

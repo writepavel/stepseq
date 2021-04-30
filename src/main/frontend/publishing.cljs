@@ -17,9 +17,9 @@
 ;; Maybe we can remove some handlers and components too.
 
 ;; There should be two publishing modes:
-;; 1. Graph version, similar to logseq.com
+;; 1. Graph version, similar to stepseq.com
 ;; 2. Traditional blog version, much faster to load
-;; We might host the pages or blocks directly on logseq.com in the future.
+;; We might host the pages or blocks directly on stepseq.com in the future.
 
 ;; How to publish?
 ;; 1. When you click a publish button, it'll downloads a zip which includes the
@@ -30,16 +30,16 @@
 (defn restore-from-transit-str!
   []
   (state/set-current-repo! "local")
-  (when-let [data js/window.logseq_db]
+  (when-let [data js/window.stepseq_db]
     (let [data (util/unescape-html data)
           db-conn (d/create-conn db-schema/schema)
-          _ (swap! db/conns assoc "logseq-db/local" db-conn)
+          _ (swap! db/conns assoc "stepseq-db/local" db-conn)
           db (db/string->db data)]
       (reset! db-conn db))))
 
 (defn restore-state!
   []
-  (when-let [data js/window.logseq_state]
+  (when-let [data js/window.stepseq_state]
     (let [data (reader/read-string data)]
       (swap! state/state merge data))))
 

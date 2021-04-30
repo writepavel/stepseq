@@ -1,4 +1,14 @@
-# Logseq
+# StepSeq
+
+StepSeq is a fork of awesome logseq with focus to be a continuous learning and lifemenagement tool.
+
+Differences from logseq (in plans yet):
+
+- provide tracking and gamification of using logseq templates called here as "steps"
+- allow integration with sleep trackers, fitness trackers, todo apps etc.
+- integration with 3rd party services requires another login method for syncing local db with datomic on server 
+
+## Logseq
 
 [![latest release version](https://img.shields.io/github/v/release/logseq/logseq)](https://github.com/logseq/logseq/releases)
 [![License](https://img.shields.io/github/license/logseq/logseq?color=blue)](https://github.com/logseq/logseq/blob/master/LICENSE.md)
@@ -82,7 +92,7 @@ The following is for developers and designers who want to build and run Logseq l
 ### 2. Compile to JavaScript
 
 ```bash
-git clone https://github.com/logseq/logseq
+git clone https://github.com/writepavel/stepseq
 yarn
 yarn watch
 ```
@@ -138,26 +148,26 @@ Basically it just pre-installs Java, Clojure and NodeJS for your convenience.
 ### 1. Fetch sources
 
 ```bash
-git clone https://github.com/logseq/logseq
+git clone https://github.com/writepavel/stepseq
 ```
 
 ### 2. Build Docker image
 
 ```bash
-cd logseq
-docker build -t logseq-docker .
+cd stepseq
+docker build -t stepseq-docker .
 ```
 
 ### 3. Run Docker container
 
 ```bash
-docker run -v $(pwd):/home/logseq/logseq -p 3001:3001 -p 9630:9630 -p 8701:8701 --rm -it logseq-docker /bin/bash
+docker run -v $(pwd):/home/stepseq/stepseq -p 3001:3001 -p 9630:9630 -p 8701:8701 --rm -it stepseq-docker /bin/bash
 ```
 
 ### 4. Inside the container compile as described above
 
 ```bash
-cd logseq
+cd stepseq
 yarn
 yarn watch
 ```

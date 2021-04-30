@@ -51,8 +51,8 @@
             {:description description}]]
           [:body
            [:div#root]
-           [:script (util/format "window.logseq_db=%s" (js/JSON.stringify (util/escape-html transit-db)))]
-           [:script (str "window.logseq_state=" (js/JSON.stringify app-state))]
+           [:script (util/format "window.stepseq_db=%s" (js/JSON.stringify (util/escape-html transit-db)))]
+           [:script (str "window.stepseq_state=" (js/JSON.stringify app-state))]
            [:script {:type "text/javascript"}
             "// Single Page Apps for GitHub Pages
       // https://github.com/rafgraph/spa-github-pages

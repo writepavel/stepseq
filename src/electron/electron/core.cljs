@@ -50,7 +50,7 @@
 (defn setup-updater! [^js win]
   ;; manual/auto updater
   (when-not linux?
-    (init-updater {:repo   "logseq/logseq"
+    (init-updater {:repo   "writepavel/stepseq"
                    :logger logger
                    :win    win})))
 
@@ -171,7 +171,7 @@
              (let [^js win (create-main-window)
                    _ (reset! *win win)
                    *quitting? (atom false)]
-               (.. logger (info (str "Logseq App(" (.getVersion app) ") Starting... ")))
+               (.. logger (info (str "Stepseq App(" (.getVersion app) ") Starting... ")))
 
                (search/ensure-search-dir!)
                (search/open-dbs!)

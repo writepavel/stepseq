@@ -19,7 +19,7 @@ module.exports = {
     {
       'name': '@electron-forge/maker-squirrel',
       'config': {
-        'name': 'Logseq',
+        'name': 'Stepseq',
         'setupIcon': './icons/logseq.ico'
       }
     },
@@ -28,7 +28,7 @@ module.exports = {
       config: {
         format: 'ULFO',
         icon: './icons/logseq_big_sur.icns',
-        name: 'Logseq'
+        name: 'Stepseq'
       }
     },
     {
@@ -46,8 +46,8 @@ module.exports = {
       name: '@electron-forge/publisher-github',
       config: {
         repository: {
-          owner: 'logseq',
-          name: 'logseq'
+          owner: 'stepseq',
+          name: 'stepseq'
         },
         prerelease: true
       }

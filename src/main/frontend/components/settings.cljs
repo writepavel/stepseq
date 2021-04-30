@@ -85,7 +85,7 @@
      (ui/button
       (if update-pending? "Checking ..." "Check for updates")
 
-      :intent "logseq"
+      :intent "stepseq"
       :class "check-update"
       :disabled update-pending?
       :on-click #(js/window.apis.checkForUpdates false))
@@ -111,7 +111,7 @@
            [:a.link
             {:on-click
              (fn [e]
-               (js/window.apis.openExternal "https://github.com/logseq/logseq/releases")
+               (js/window.apis.openExternal "https://github.com/writepavel/stepseq/releases")
                (util/stop e))}
             svg/external-link " release channel"]])])]))
 

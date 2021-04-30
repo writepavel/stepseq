@@ -20,7 +20,7 @@
      (:cors_proxy (state/get-me)))
    ;; Not working yet
    ;; "https://cors-proxy-logseq.vercel.app"
-   "https://cors.logseq.com"))
+   "https://cors.stepseq.com"))
 
 (defn set-username-email
   [dir username email]

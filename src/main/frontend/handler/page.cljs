@@ -471,7 +471,7 @@
   []
   (commands/init-commands! get-page-ref-text))
 
-(defn delete-page-from-logseq
+(defn delete-page-from-stepseq
   [project permalink]
   (let [url (util/format "%s%s/%s" config/api project permalink)]
     (js/Promise.
@@ -505,7 +505,7 @@
 (defn update-state-and-notify
   [page-name]
   (page-add-properties! page-name {:published false})
-  (notification/show! (util/format "Remove Page \"%s\" from Logseq server success" page-name) :success))
+  (notification/show! (util/format "Remove Page \"%s\" from Stepseq server success" page-name) :success))
 
 (defn add-page-to-recent!
   [repo page]

@@ -104,7 +104,7 @@
                [:thead
                 [:tr
                  [:th (t :publishing/page-name)]
-                 [:th (t :publishing/delete-from-logseq)]]]
+                 [:th (t :publishing/delete-from-stepseq)]]]
                [:tbody
                 (for [{:keys [title permalink]} pages]
                   [:tr {:key permalink}
@@ -120,7 +120,7 @@
                          [:a {:on-click
                               (fn [e]
                                 (util/stop e)
-                                (-> (p/let [_ (page-handler/delete-page-from-logseq current-project permalink)]
+                                (-> (p/let [_ (page-handler/delete-page-from-stepseq current-project permalink)]
                                       (page-handler/update-state-and-notify title))
                                     (p/catch
                                       (fn [error]
@@ -128,7 +128,7 @@
                                               not-found-on-server 404]
                                           (if (= not-found-on-server status)
                                             (page-handler/update-state-and-notify title)
-                                            (let [message (util/format "Failed to remove the page \"%s\" from Logseq"
+                                            (let [message (util/format "Failed to remove the page \"%s\" from Stepseq"
                                                             title)]
                                               (notification/show! message :failed))))))))}
                           (t :publishing/delete)]]]])]]]]))))))

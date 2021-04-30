@@ -42,8 +42,8 @@
          [:h1.title "All Graphs"]
          [:p.ml-2.opacity-70
           (if (state/github-authed?)
-            "A \"graph\" in Logseq could be either a local directory or a git repo."
-            "A \"graph\" in Logseq means a local directory.")]
+            "A \"graph\" in Stepseq could be either a local directory or a git repo."
+            "A \"graph\" in Stepseq means a local directory.")]
 
          [:div.pl-1.content.mt-3
           [:div.flex.flex-row.my-4
@@ -56,7 +56,7 @@
              (ui/button
               "Add another git repo"
               :href (rfe/href :repo-add nil {:graph-types "github"})
-              :intent "logseq"))]
+              :intent "stepseq"))]
           (for [{:keys [id url] :as repo} repos]
             (let [local? (config/local-db? url)]
               [:div.flex.justify-between.mb-1 {:key id}

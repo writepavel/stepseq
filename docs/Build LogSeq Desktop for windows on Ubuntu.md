@@ -1,11 +1,11 @@
-# Building Logseq Desktop app for Windows on Ubuntu
+# Building Stepseq Desktop app for Windows on Ubuntu
 ## Intro
-My Logseq dev machine is on Ubuntu 18.x and my production machine is running Windows 10, I needed a way to compile the Logseq desktop APP for Windows.
+My Stepseq dev machine is on Ubuntu 18.x and my production machine is running Windows 10, I needed a way to compile the Stepseq desktop APP for Windows.
 I tired & failed to make the "build" run on my windows machine but I did, however, succeed in letting my Ubuntu machine make Windows x64 files
 ## Pre-requisites
-These are the steps I took to make it work on my Ubuntu machine, sharing them hoping it helps someone else. I assume you have all the basic pre-requisites for Logseq, if not you can find them at https://github.com/logseq/logseq#1-requirements
-1. clone Logseq repo if you haven't already
-`git clone https://github.com/logseq/logseq/`
+These are the steps I took to make it work on my Ubuntu machine, sharing them hoping it helps someone else. I assume you have all the basic pre-requisites for Stepseq, if not you can find them at https://github.com/writepavel/stepseq#1-requirements
+1. clone Stepseq repo if you haven't already
+`git clone https://github.com/writepavel/stepseq/`
 1. Install wine
 ```shell
 sudo dpkg --add-architecture i386
@@ -24,10 +24,10 @@ sudo apt install nuget
 
 sudo apt-get install mono-complete
 ```
-1. in `~/logseq/resources/package.json` line 10 `"electron:make": "electron-forge make --platform=win32 --arch=x64 --asar",`
+1. in `~/stepseq/resources/package.json` line 10 `"electron:make": "electron-forge make --platform=win32 --arch=x64 --asar",`
 1. Compile using
 ```shell
-cd logseq
+cd stepseq
 yarn
 yarn release
 yarn release-electron

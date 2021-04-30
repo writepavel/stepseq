@@ -111,22 +111,22 @@ jobs:
         working-directory: ./static
 
       - name: Change Artifact Name For ZIP File
-        run: mv static/out/make/zip/linux/x64/Logseq-linux-x64-*.zip  static/out/make/zip/linux/x64/Logseq-linux.zip
+        run: mv static/out/make/zip/linux/x64/Stepseq-linux-x64-*.zip  static/out/make/zip/linux/x64/Stepseq-linux.zip
 
       - name: Change Artifact Name For AppImage File
-        run: mv static/out/make/Logseq-*.AppImage  static/out/make/Logseq-linux.AppImage
+        run: mv static/out/make/Stepseq-*.AppImage  static/out/make/Stepseq-linux.AppImage
 
       - name: Cache Artifact With ZIP format
         uses: actions/upload-artifact@v1
         with:
-          name: Logseq-linux.zip
-          path: static/out/make/zip/linux/x64/Logseq-linux.zip
+          name: Stepseq-linux.zip
+          path: static/out/make/zip/linux/x64/Stepseq-linux.zip
 
       - name: Cache Artifact With AppImage format
         uses: actions/upload-artifact@v1
         with:
-          name: Logseq-linux.AppImage
-          path: static/out/make/Logseq-linux.AppImage
+          name: Stepseq-linux.AppImage
+          path: static/out/make/Stepseq-linux.AppImage
 
   build-windows:
     runs-on: windows-latest
@@ -158,7 +158,7 @@ jobs:
         working-directory: ./static
 
       - name: Change Artifact Name
-        run: Get-ChildItem  static\out\make\squirrel.windows\x64\*.exe | Rename-Item -NewName Logseq-win64.exe
+        run: Get-ChildItem  static\out\make\squirrel.windows\x64\*.exe | Rename-Item -NewName Stepseq-win64.exe
 
       - name: List Directory
         run: dir
@@ -167,8 +167,8 @@ jobs:
       - name: Cache Artifact
         uses: actions/upload-artifact@v1
         with:
-          name: Logseq-win64.exe
-          path: static/out/make/squirrel.windows/x64/Logseq-win64.exe
+          name: Stepseq-win64.exe
+          path: static/out/make/squirrel.windows/x64/Stepseq-win64.exe
 
   build-macos:
     needs: [ compile-cljs ]
@@ -210,19 +210,19 @@ jobs:
         working-directory: ./static
 
       - name: Change DMG Name
-        run: mv static/out/make/Logseq.dmg static/out/make/logseq-darwin-x64-${{ github.event.inputs.tag-version }}.dmg
+        run: mv static/out/make/Stepseq.dmg static/out/make/stepseq-darwin-x64-${{ github.event.inputs.tag-version }}.dmg
 
       - name: Cache Artifact DMG
         uses: actions/upload-artifact@v1
         with:
-          name: Logseq-x64.dmg
-          path: static/out/make/logseq-darwin-x64-${{ github.event.inputs.tag-version }}.dmg
+          name: Stepseq-x64.dmg
+          path: static/out/make/stepseq-darwin-x64-${{ github.event.inputs.tag-version }}.dmg
 
       - name: Cache Artifact ZIP
         uses: actions/upload-artifact@v1
         with:
-          name: Logseq-x64.zip
-          path: static/out/make/zip/darwin/x64/logseq-darwin-x64-${{ github.event.inputs.tag-version }}.zip
+          name: Stepseq-x64.zip
+          path: static/out/make/zip/darwin/x64/stepseq-darwin-x64-${{ github.event.inputs.tag-version }}.zip
 
   release:
     needs: [ build-macos, build-linux, build-windows ]
@@ -232,31 +232,31 @@ jobs:
       - name: Download The MacOS X64 DMG Artifact
         uses: actions/download-artifact@v1
         with:
-          name: Logseq-x64.dmg
+          name: Stepseq-x64.dmg
           path: ./
 
       - name: Download The MacOS X64 ZIP Artifact
         uses: actions/download-artifact@v1
         with:
-          name: Logseq-x64.zip
+          name: Stepseq-x64.zip
           path: ./
 
       - name: Download The Linux Artifact In Zip format
         uses: actions/download-artifact@v1
         with:
-          name: Logseq-linux.zip
+          name: Stepseq-linux.zip
           path: ./
 
       - name: Download The Linux Artifact In AppImage format
         uses: actions/download-artifact@v1
         with:
-          name: Logseq-linux.AppImage
+          name: Stepseq-linux.AppImage
           path: ./
 
       - name: Download The Windows Artifact
         uses: actions/download-artifact@v1
         with:
-          name: Logseq-win64.exe
+          name: Stepseq-win64.exe
           path: ./
 
       - name: List files
@@ -280,8 +280,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./logseq-darwin-x64-${{ github.event.inputs.tag-version }}.zip
-          asset_name: logseq-darwin-x64-${{ github.event.inputs.tag-version }}.zip
+          asset_path: ./stepseq-darwin-x64-${{ github.event.inputs.tag-version }}.zip
+          asset_name: stepseq-darwin-x64-${{ github.event.inputs.tag-version }}.zip
           asset_content_type: application/zip
 
       - name: Upload MacOS X64 DMG Artifact
@@ -291,8 +291,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./logseq-darwin-x64-${{ github.event.inputs.tag-version }}.dmg
-          asset_name: logseq-darwin-x64-${{ github.event.inputs.tag-version }}.dmg
+          asset_path: ./stepseq-darwin-x64-${{ github.event.inputs.tag-version }}.dmg
+          asset_name: stepseq-darwin-x64-${{ github.event.inputs.tag-version }}.dmg
           asset_content_type: application/x-apple-diskimage
 
       - name: Upload Linux Artifact With Zip format
@@ -302,8 +302,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./Logseq-linux.zip
-          asset_name: logseq-linux-x64-${{ github.event.inputs.tag-version }}.zip
+          asset_path: ./Stepseq-linux.zip
+          asset_name: Stepseq-linux-x64-${{ github.event.inputs.tag-version }}.zip
           asset_content_type: application/zip
 
       - name: Upload Linux Artifact With AppImage format
@@ -313,8 +313,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./Logseq-linux.AppImage
-          asset_name: logseq-linux-x64-${{ github.event.inputs.tag-version }}.AppImage
+          asset_path: ./Stepseq-linux.AppImage
+          asset_name: stepseq-linux-x64-${{ github.event.inputs.tag-version }}.AppImage
           asset_content_type: application/octet-stream
 
       - name: Upload Windows Artifact
@@ -324,6 +324,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./Logseq-win64.exe
-          asset_name: logseq-win-x64-${{ github.event.inputs.tag-version }}.exe
+          asset_path: ./Stepseq-win64.exe
+          asset_name: stepseq-win-x64-${{ github.event.inputs.tag-version }}.exe
           asset_content_type: application/octet-stream

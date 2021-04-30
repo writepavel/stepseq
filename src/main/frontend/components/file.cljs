@@ -91,7 +91,7 @@
                                                 (util/stop e)))}
            page]])
 
-       (when (and page (not (string/starts-with? page "logseq/")))
+       (when (and page (not (string/starts-with? page "stepseq/")))
          [:p.text-sm.ml-1.mb-4
           (svg/warning {:style {:width "1em"
                                 :display "inline-block"}})

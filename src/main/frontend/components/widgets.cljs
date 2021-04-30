@@ -91,12 +91,12 @@
            {:on-click page-handler/ls-dir-files!})
          [:div
           [:h1.title "Open a local directory"]
-          [:p "Logseq supports both Markdown and Org-mode, you can open an existing directory or creating a new one. Your data will be stored only on this device."]
+          [:p "Stepseq supports both Markdown and Org-mode, you can open an existing directory or creating a new one. Your data will be stored only on this device."]
           [:p "After you opened your directory, it will create three sub-directories in that directory:"]
           [:ul
            [:li "/journals - store your journal pages"]
            [:li "/pages - store the other pages"]
-           [:li "/logseq - store configuration, custom.css, and some metadata."]]
+           [:li "/stepseq - store configuration, custom.css, and some metadata."]]
           (when-not nfs-supported?
             (ui/admonition :warning
                            [:p "It seems that your browser doesn't support the "

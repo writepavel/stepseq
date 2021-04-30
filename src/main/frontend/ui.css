@@ -116,7 +116,7 @@
     @apply text-white;
   }
 
-  &[intent='logseq'] {
+  &[intent='stepseq'] {
     @apply focus:border-gray-500 dark:hover:text-gray-200;
 
     color: var(--ls-primary-text-color);

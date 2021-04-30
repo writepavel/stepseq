@@ -171,10 +171,10 @@
                   (notification/show!
                    [:span.mr-2
                     (util/format
-                     "Please make sure that you've installed the logseq app for the repo %s on GitHub. "
+                     "Please make sure that you've installed the stepseq app for the repo %s on GitHub. "
                      repo)
                     (ui/button
-                     "Install Logseq on GitHub"
+                     "Install Stepseq on GitHub"
                      :href (str "https://github.com/apps/" config/github-app-name "/installations/new"))]
                    :error
                    false))))))))

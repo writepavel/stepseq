@@ -14,4 +14,4 @@ cp ./static/404.html /tmp/publishing/
 /usr/bin/rm /tmp/publishing/static/public.css
 cd /tmp/publishing/
 mv ./static/js/publishing/code-editor.js ./static/js/
-tar -zcvf /tmp/logseq_publishing.tar.gz ./
+tar -zcvf /tmp/stepseq_publishing.tar.gz ./

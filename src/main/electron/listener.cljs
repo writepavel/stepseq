@@ -39,7 +39,7 @@
        (if (seq repos)
          (do
            (notification/show!
-            (ui/loading "Logseq is saving the graphs to your local file system, please wait for several seconds.")
+            (ui/loading "Stepseq is saving the graphs to your local file system, please wait for several seconds.")
             :warning)
            (js/setTimeout
             (fn []

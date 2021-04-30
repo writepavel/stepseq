@@ -970,7 +970,7 @@
 #?(:cljs
     (defn indexeddb-check?
       [error-handler]
-      (let [test-db "logseq-test-db-foo-bar-baz"
+      (let [test-db "stepseq-test-db-foo-bar-baz"
             db (and js/window.indexedDB
                     (js/window.indexedDB.open test-db))]
         (when (and db (not (chrome?)))
@@ -1042,7 +1042,7 @@
       [style]
       (when (some? style)
         (let [parent-node (d/sel1 :head)
-              id "logseq-custom-theme-id"
+              id "stepseq-custom-theme-id"
               old-link-element (d/sel1 (str "#" id))
               style (if (string/starts-with? style "http")
                       style

@@ -148,10 +148,11 @@
 
 (defn init-sentry
   []
-  (let [cfg
-        {:dsn "https://636e9174ffa148c98d2b9d3369661683@o416451.ingest.sentry.io/5311485"
-         :release (util/format "logseq@%s" version/version)}]
-    (.init js/window.Sentry (clj->js cfg))))
+  ;; (let [cfg
+  ;;       {:dsn "https://636e9174ffa148c98d2b9d3369661683@o416451.ingest.sentry.io/5311485"
+  ;;        :release (util/format "stepseq@%s" version/version)}]
+  ;;   (.init js/window.Sentry (clj->js cfg)))
+  )
 
 (defn on-load-events
   []

@@ -26,7 +26,7 @@
 (defn datascript-files-db
   [repo]
   (when repo
-    (str "logseq-files-db/" (get-repo-path repo))))
+    (str "stepseq-files-db/" (get-repo-path repo))))
 
 (defn remove-db!
   [repo]

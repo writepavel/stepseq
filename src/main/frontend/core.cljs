@@ -22,15 +22,8 @@
   []
   (js/console.log
    "
-    Welcome to Logseq!
-    If you encounter any problem, feel free to file an issue on GitHub (https://github.com/logseq/logseq)
-    or join our Discord server (https://discord.gg/KpN4eHY).
-    .____
-    |    |    ____   ____  ______ ____  ______
-    |    |   /  _ \\ / ___\\/  ___// __ \\/ ____/
-    |    |__(  <_> ) /_/  >___ \\\\  ___< <_|  |
-    |_______ \\____/\\___  /____  >\\___  >__   |
-            \\/    /_____/     \\/     \\/   |__|
+    Welcome to Stepseq!
+    If you encounter any problem, feel free to file an issue on GitHub (https://github.com/writepavel/stepseq)
      "))
 
 (defn start []

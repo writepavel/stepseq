@@ -9,10 +9,10 @@ RUN curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - && \
     apt-get update && \
     apt-get install -y yarn
 
-RUN useradd -ms /bin/bash logseq
+RUN useradd -ms /bin/bash stepseq
 
-USER logseq
-WORKDIR /home/logseq
+USER stepseq
+WORKDIR /home/stepseq
 
 EXPOSE 3001
 EXPOSE 9630

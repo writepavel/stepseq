@@ -26,7 +26,7 @@
         (t :on-boarding/privacy)]
        [:p
         {}
-        [:strong {} "Logseq"]
+        [:strong {} "Stepseq"]
         (t :on-boarding/inspired-by)
         [:a {:href "https://roamresearch.com/"
              :target "_blank"} "Roam Research"]
@@ -89,14 +89,14 @@
         {}
         [:li
          {}
-         "Twitter: "
+         "Original Logseq Twitter: "
          [:a
           {:href "https://twitter.com/logseq"
            :target "_blank"}
           "https://twitter.com/logseq"]]
         [:li
          {}
-         "Discord: "
+         "Original Logseq Discord: "
          [:a
           {:href "https://discord.gg/KpN4eHY"
            :target "_blank"}
@@ -106,9 +106,9 @@
          {}
          "Github: "
          [:a
-          {:href "https://github.com/logseq/logseq"
+          {:href "https://github.com/writepavel/stepseq"
            :target "_blank"}
-          "https://github.com/logseq/logseq"]
+          "https://github.com/writepavel/stepseq"]
          (t :on-boarding/github-desc)]
         [:li
          {}
@@ -164,7 +164,7 @@
               :target "_blank"} "isomorphic-git"]
          (t :on-boarding/isomorphic-git-desc)]]
 
-       [:img {:src "https://asset.logseq.com/static/img/credits.png"
+       [:img {:src "https://asset.stepseq.com/static/img/credits.png"
               :style {:margin "12px 0 0 0"}}]]]]))
 
 (defn help
@@ -304,12 +304,12 @@
           [:td.text-right
            [:a {:href "https://www.example.com"}
             "label"]]]
-         [:tr [:td "![image](https://asset.logseq.com/static/img/logo.png)"]
+         [:tr [:td "![image](https://asset.stepseq.com/static/img/logo.png)"]
           [:td.text-right
            [:img {:style {:float "right"
                           :width 64
                           :height 64}
-                  :src "https://asset.logseq.com/static/img/logo.png"
+                  :src "https://asset.stepseq.com/static/img/logo.png"
                   :alt "image"}]]]]]]
 
       [:li
@@ -335,10 +335,10 @@
           [:td.text-right
            [:a {:href "https://www.example.com"}
             "label"]]]
-         [:tr [:td "[[https://asset.logseq.com/static/img/logo.png][image]]"]
+         [:tr [:td "[[https://asset.stepseq.com/static/img/logo.png][image]]"]
           [:td.text-right
            [:img {:style {:float "right"
                           :width 64
                           :height 64}
-                  :src "https://asset.logseq.com/static/img/logo.png"
+                  :src "https://asset.stepseq.com/static/img/logo.png"
                   :alt "image"}]]]]]]]]))

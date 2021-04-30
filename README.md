@@ -89,6 +89,10 @@ The following is for developers and designers who want to build and run Logseq l
 - [Node.js](https://nodejs.org/en/download/) & [Yarn](https://classic.yarnpkg.com/en/docs/install/)
 - [Java & Clojure](https://clojure.org/guides/getting_started). (If you run into `Execution error (FileNotFoundException) at java.io.FileInputStream/open0 (FileInputStream.java:-2). -M:cljs (No such file or directory)`, it means you have a wrong Clojure version installed. Please uninstall it and follow the instructions linked.)
 
+If you work on windows then update `package.json` file:
+before all commands starting with `clojure -M:cljs ...` add `powershell` so it would be `powershell clojure -M:cljs ...`
+
+
 ### 2. Compile to JavaScript
 
 ```bash

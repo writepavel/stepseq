@@ -364,7 +364,7 @@ title: How to take dummy notes?
         :user/delete-your-account "Delete your account"
         :user/delete-account-notice "All your published pages on logseq.com will be deleted."}
    
-   {:ru {:tutorial/text "---
+   :ru {:tutorial/text "---
 title: $today
 ---
 
@@ -1946,6 +1946,7 @@ title: How to take dummy notes?
 (def languages [{:label "English" :value :en}
                 {:label "Français" :value :fr}
                 {:label "Deutsch" :value :de}
+                {:label "Russian" :value :ru}
                 {:label "简体中文" :value :zh-CN}
                 {:label "繁體中文" :value :zh-Hant}
                 {:label "Afrikaans" :value :af}])

@@ -89,15 +89,8 @@
        ["NOW" (->marker "NOW")]])))
 
 (def step-command
-  ;; []
-;; [[:editor/show-date-picker]]
-  ;; (->priority "C")
-  ;; (println "STEP_COMMAND 12")
-  ;; (embed-block)
-  ;; [[:editor/input "{{query }}" {:backward-pos 2}]]
   [[:editor/input "/" nil]
-   [:editor/search-step-template]]
-  )
+   [:editor/search-step-template]])
 
 ;; Credits to roamresearch.com
 (defn commands-map
@@ -138,7 +131,7 @@
      ["Block Embed" (embed-block)]
      ["Link" link-steps]
      ["Step" step-command]
-     ["Step-Template" (embed-block)]
+     ["Шаг" step-command]
      ["Template" [[:editor/input "/" nil]
                   [:editor/search-template]]]
      ;; same as link

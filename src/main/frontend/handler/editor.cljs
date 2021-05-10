@@ -796,6 +796,7 @@
   (state/set-editor-show-page-search! false)
   (state/set-editor-show-block-search! false)
   (state/set-editor-show-template-search! false)
+  (state/set-editor-show-step-template-search! false)
   (commands/restore-state true))
 
 (defn get-state
@@ -1428,6 +1429,7 @@
                   (not (state/get-editor-show-block-search?))
                   (not (state/get-editor-show-date-picker?))
                   (not (state/get-editor-show-template-search?))
+                  (not (state/get-editor-show-step-template-search?))
                   (not (state/get-editor-show-input)))
          (state/set-editor-op! :auto-save)
          (try
@@ -1766,6 +1768,10 @@
   [q]
   (search/template-search q))
 
+(defn get-matched-step-templates
+  [q]
+  (search/step-template-search q))
+
 (defn get-matched-commands
   [input]
   (try
@@ -1811,6 +1817,7 @@
       (state/get-editor-show-page-search?)
       (state/get-editor-show-block-search?)
       (state/get-editor-show-template-search?)
+      (state/get-editor-show-step-template-search?)
       (state/get-editor-show-date-picker?)))
 
 (defn get-previous-input-char
@@ -2307,6 +2314,53 @@
     (when-let [input (gdom/getElement id)]
       (.focus input))))
 
+(defn step-template-on-chosen-handler
+  [input id q format edit-block edit-content]
+  (fn [[template db-id] _click?]
+    (println (str "step-template-on-chosen-handler, input = " input ", id = " id ", q = " q ", format = " format ", edit-block = " edit-block ", edit-content = " edit-content ", template = " template ", db-id = " db-id))
+    (if-let [block (db/entity db-id)]
+      (let [new-level (:block/level edit-block)
+            properties (:block/properties block)
+            block-uuid (:block/uuid block)
+            including-parent? (not= (get properties "including-parent") "false")
+            template-parent-level (:block/level block)
+            pattern (config/get-block-pattern format)
+            content
+
+            ;;TODO Modify content. 
+            ;;Every question except tagged as "title_question":
+            ;;  - Add empty sub-item for answer
+            ;;  - replace question by reference to block.
+            ;; "title_question" question - add to title along with <% time %> and [[page for step_form]]            
+
+            (block-handler/get-block-full-content
+             (state/get-current-repo)
+             (:block/uuid block)
+             (fn [{:block/keys [uuid level content properties] :as block}]
+               (let [parent? (= uuid block-uuid)
+                     ignore-parent? (and parent? (not including-parent?))]
+                 (if ignore-parent?
+                   ""
+                   (let [new-level (+ new-level
+                                      (- level template-parent-level
+                                         (if (not including-parent?) 1 0)))
+                         properties' (dissoc (into {} properties) "id" "custom_id" "step_form" "answer_reward" "including-parent")]
+                     (-> content
+                         (string/replace-first (apply str (repeat level pattern))
+                                               (apply str (repeat new-level pattern)))
+                         text/remove-properties!
+                         (text/rejoin-properties properties')))))))
+            
+
+            content (if (string/includes? (string/trim edit-content) "\n")
+                      content
+                      (text/remove-level-spaces content format))
+            content (template/resolve-dynamic-template! content)]
+        (state/set-editor-show-step-template-search! false)
+        (insert-command! id content format {})))
+    (when-let [input (gdom/getElement id)]
+      (.focus input))))
+
 (defn keydown-enter-handler
   [state input]
   (fn [state e]
@@ -2466,7 +2520,8 @@
     (let [pos (and input (:pos (util/get-caret-pos input)))]
       (when (and (not (state/get-editor-show-input))
                  (not (state/get-editor-show-date-picker?))
-                 (not (state/get-editor-show-template-search?)))
+                 (not (state/get-editor-show-template-search?))
+                 (not (state/get-editor-show-step-template-search?)))
         (util/stop e)
         (let [direction (if (gobj/get e "shiftKey") ; shift+tab move to left
                           :left

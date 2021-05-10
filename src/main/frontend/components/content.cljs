@@ -128,6 +128,53 @@
                     (reset! edit? true))}
        "Make template"))))
 
+(rum/defcs block-step-template < rum/reactive
+  (rum/local false ::edit?)
+  (rum/local "" ::input)
+  {:will-unmount (fn [state]
+                   (reset! *including-parent? nil)
+                   state)}
+  [state block-id]
+  (let [edit? (get state ::edit?)
+        input (get state ::input)
+        including-parent? (rum/react *including-parent?)
+        block-id (if (string? block-id) (uuid block-id) block-id)
+        block (db/entity [:block/uuid block-id])
+        has-children? (seq (:block/children block))]
+    (when (and (nil? including-parent?) has-children?)
+      (reset! *including-parent? true))
+
+    (if @edit?
+      (do
+        (state/clear-edit!)
+        [:div.px-4.py-2 {:on-click (fn [e] (util/stop e))}
+         [:p "What's the step's name?"]
+         [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
+          {:auto-focus true
+           :on-change (fn [e]
+                        (reset! input (util/evalue e)))}]
+         (when has-children?
+           (template-checkbox including-parent?))
+         (ui/button "Submit"
+                    :on-click (fn []
+                                (let [title (string/trim @input)]
+                                  (when (not (string/blank? title))
+                                    (if (page-handler/step-template-exists? title)
+                                      (notification/show!
+                                       [:p "Step form already exists!"]
+                                       :error)
+                                      (do
+                                        (editor-handler/set-block-property! block-id "step_form" title)
+                                        (when (false? including-parent?)
+                                          (editor-handler/set-block-property! block-id "including-parent" false))
+                                        (state/hide-custom-context-menu!)))))))])
+      (ui/menu-link
+       {:key "Make step form"
+        :on-click (fn [e]
+                    (util/stop e)
+                    (reset! edit? true))}
+       "Make step form"))))
+
 (rum/defc block-context-menu-content
   [target block-id]
   (rum/with-context [[t] i18n/*tongue-context*]

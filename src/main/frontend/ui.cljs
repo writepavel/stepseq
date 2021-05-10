@@ -27,7 +27,8 @@
   (let [skip-composition? (or
                            (state/sub :editor/show-page-search?)
                            (state/sub :editor/show-block-search?)
-                           (state/sub :editor/show-template-search?))
+                           (state/sub :editor/show-template-search?)
+                           (state/sub :editor/show-step-template-search?))
         on-composition (fn [e]
                          (if skip-composition?
                            (on-change e)

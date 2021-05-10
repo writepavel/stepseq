@@ -88,6 +88,17 @@
        ["LATER" (->marker "LATER")]
        ["NOW" (->marker "NOW")]])))
 
+(def step-command
+  ;; []
+;; [[:editor/show-date-picker]]
+  ;; (->priority "C")
+  ;; (println "STEP_COMMAND 12")
+  ;; (embed-block)
+  ;; [[:editor/input "{{query }}" {:backward-pos 2}]]
+  [[:editor/input "/" nil]
+   [:editor/search-step-template]]
+  )
+
 ;; Credits to roamresearch.com
 (defn commands-map
   [get-page-ref-text]
@@ -126,6 +137,8 @@
                          [:editor/search-block :reference]]]
      ["Block Embed" (embed-block)]
      ["Link" link-steps]
+     ["Step" step-command]
+     ["Step-Template" (embed-block)]
      ["Template" [[:editor/input "/" nil]
                   [:editor/search-template]]]
      ;; same as link
@@ -469,6 +482,9 @@
 
 (defmethod handle-step :editor/search-template [[_]]
   (state/set-editor-show-template-search! true))
+
+(defmethod handle-step :editor/search-step-template [[_]]
+  (state/set-editor-show-step-template-search! true))
 
 (defmethod handle-step :editor/show-input [[_ option]]
   (state/set-editor-show-input! option))

@@ -1166,8 +1166,10 @@
        db)
       (db-utils/seq-flatten)))
 
+
 (defn get-all-templates
   []
+  (println "get-all-templates")
   (let [pred (fn [db properties]
                (some? (get properties "template")))]
     (->> (d/q
@@ -1180,6 +1182,23 @@
           pred)
          (map (fn [[e m]]
                 [(get m "template") e]))
+         (into {}))))
+
+(defn get-all-step-templates
+  []
+  (println "get-all-step-templates")
+  (let [pred (fn [db properties]
+               (some? (get properties "step_form")))]
+    (->> (d/q
+          '[:find ?b ?p
+            :in $ ?pred
+            :where
+            [?b :block/properties ?p]
+            [(?pred $ ?p)]]
+          (conn/get-conn)
+          pred)
+         (map (fn [[e m]]
+                [(get m "step_form") e]))
          (into {}))))
 
 (defonce blocks-count-cache (atom nil))

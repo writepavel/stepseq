@@ -522,6 +522,14 @@
         (let [templates (map string/lower-case templates)]
           (contains? (set templates) (string/lower-case title)))))))
 
+(defn step-template-exists?
+  [title]
+  (when title
+    (let [templates (keys (db/get-all-step-templates))]
+      (when (seq templates)
+        (let [templates (map string/lower-case templates)]
+          (contains? (set templates) (string/lower-case title)))))))
+
 (defn ls-dir-files!
   []
   (web-nfs/ls-dir-files-with-handler!

@@ -140,8 +140,20 @@
   ([q]
    (template-search q 10))
   ([q limit]
+   (println "template-search")
    (let [q (clean-str q)]
      (let [templates (db/get-all-templates)]
+       (when (seq templates)
+         (let [result (fuzzy-search (keys templates) q :limit limit)]
+           (vec (select-keys templates result))))))))
+
+(defn step-template-search
+  ([q]
+   (step-template-search q 10))
+  ([q limit]
+   (println "step-template-search")
+   (let [q (clean-str q)]
+     (let [templates (db/get-all-step-templates)]
        (when (seq templates)
          (let [result (fuzzy-search (keys templates) q :limit limit)]
            (vec (select-keys templates result))))))))

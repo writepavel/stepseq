@@ -35,6 +35,7 @@
              (not (state/sub :editor/show-page-search?))
              (not (state/sub :editor/show-block-search?))
              (not (state/sub :editor/show-template-search?))
+             (not (state/sub :editor/show-step-template-search?))
              (not (state/sub :editor/show-input))
              (not (state/sub :editor/show-date-picker?)))
     (let [matched (util/react *matched-commands)]
@@ -166,6 +167,32 @@
             :empty-div   [:div.text-gray-500.pl-4.pr-4 "Search for a template"]
             :item-render (fn [[template _block-db-id]]
                            template)
+            :class       "black"}))))))
+
+(rum/defc step-template-search < rum/reactive
+  {:will-unmount (fn [state] (reset! editor-handler/*selected-text nil) state)}
+  [id format]
+  (when (state/sub :editor/show-step-template-search?)
+    (let [pos (:editor/last-saved-cursor @state/state)
+          input (gdom/getElement id)]
+      (when input
+        (let [current-pos (:pos (util/get-caret-pos input))
+              edit-content (state/sub [:editor/content id])
+              edit-block (state/sub :editor/block)
+              q (or
+                 (when (>= (count edit-content) current-pos)
+                   (subs edit-content pos current-pos))
+                 "")
+              matched-templates (editor-handler/get-matched-step-templates q)
+              non-exist-handler (fn [_state]
+                                  (state/set-editor-show-step-template-search! false))]
+          (ui/auto-complete
+           matched-templates
+           {:on-chosen   (editor-handler/step-template-on-chosen-handler input id q format edit-block edit-content)
+            :on-enter    non-exist-handler
+            :empty-div   [:div.text-gray-500.pl-4.pr-4 "Search for a step form"]
+            :item-render (fn [[template-name _block-db-id]]
+                           template-name)
             :class       "black"}))))))
 
 (rum/defc mobile-bar < rum/reactive
@@ -420,6 +447,11 @@
       true
       *slash-caret-pos)
 
+     (transition-cp
+      (step-template-search id format)
+      true
+      *slash-caret-pos)
+     
      (transition-cp
       (datetime-comp/date-picker id format nil)
       false

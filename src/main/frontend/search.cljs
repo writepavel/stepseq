@@ -140,7 +140,6 @@
   ([q]
    (template-search q 10))
   ([q limit]
-   (println "template-search")
    (let [q (clean-str q)]
      (let [templates (db/get-all-templates)]
        (when (seq templates)
@@ -151,7 +150,6 @@
   ([q]
    (step-template-search q 10))
   ([q limit]
-   (println "step-template-search")
    (let [q (clean-str q)]
      (let [templates (db/get-all-step-templates)]
        (when (seq templates)

@@ -2344,7 +2344,7 @@
                    (let [new-level (+ new-level
                                       (- level template-parent-level
                                          (if (not including-parent?) 1 0)))
-                         properties' (dissoc (into {} properties) "id" "custom_id" "step_form" "answer_reward" "including-parent")]
+                         properties' (dissoc (into {} properties) "id" "custom_id" "step_form" "first_answer_to_title" "reward_for_answer" "including-parent")]
                      (-> content
                          (string/replace-first (apply str (repeat level pattern))
                                                (apply str (repeat new-level pattern)))

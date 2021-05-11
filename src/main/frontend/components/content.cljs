@@ -74,12 +74,21 @@
 
 (defonce *including-parent? (atom nil))
 
+(defonce *first-answer-as-step-title? (atom nil))
+
 (rum/defc template-checkbox
   [including-parent?]
   [:div.flex.flex-row
    [:span.text-medium.mr-2 "Including the parent block in the template?"]
    (ui/toggle including-parent?
               #(swap! *including-parent? not))])
+
+(rum/defc checkbox-first-answer-as-step-title
+  [first-answer-as-step-title?]
+  [:div.flex.flex-row
+   [:span.text-medium.mr-2 "Use answer to first question as step title?"]
+   (ui/toggle first-answer-as-step-title?
+              #(swap! *first-answer-as-step-title? not))])
 
 (rum/defcs block-template < rum/reactive
   (rum/local false ::edit?)
@@ -130,14 +139,18 @@
 
 (rum/defcs block-step-template < rum/reactive
   (rum/local false ::edit?)
-  (rum/local "" ::input)
+  (rum/local "" ::step-name)
+  (rum/local "0.1" ::reward-for-answer)
   {:will-unmount (fn [state]
                    (reset! *including-parent? nil)
+                   (reset! *first-answer-as-step-title? nil)
                    state)}
   [state block-id]
   (let [edit? (get state ::edit?)
-        input (get state ::input)
+        step-name (get state ::step-name)
+        reward-for-answer (get state ::reward-for-answer)
         including-parent? (rum/react *including-parent?)
+        first-answer-as-step-title? (rum/react *first-answer-as-step-title?)
         block-id (if (string? block-id) (uuid block-id) block-id)
         block (db/entity [:block/uuid block-id])
         has-children? (seq (:block/children block))]
@@ -152,12 +165,19 @@
          [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
           {:auto-focus true
            :on-change (fn [e]
-                        (reset! input (util/evalue e)))}]
+                        (reset! step-name (util/evalue e)))}]         
+         (checkbox-first-answer-as-step-title first-answer-as-step-title?)
+         [:p "Reward for each answer:"]
+         [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
+          {:value @reward-for-answer
+           :on-change (fn [e]
+                        (reset! reward-for-answer (util/evalue e)))}]
          (when has-children?
            (template-checkbox including-parent?))
          (ui/button "Submit"
                     :on-click (fn []
-                                (let [title (string/trim @input)]
+                                (let [title (string/trim @step-name)
+                                      reward-value (js/parseFloat (.replace (string/trim @reward-for-answer) "," "."))]
                                   (when (not (string/blank? title))
                                     (if (page-handler/step-template-exists? title)
                                       (notification/show!
@@ -165,15 +185,18 @@
                                        :error)
                                       (do
                                         (editor-handler/set-block-property! block-id "step_form" title)
+                                        (when (true? first-answer-as-step-title?)
+                                          (editor-handler/set-block-property! block-id "first_answer_to_title" true))
+                                        (editor-handler/set-block-property! block-id "reward_for_answer" reward-value)
                                         (when (false? including-parent?)
                                           (editor-handler/set-block-property! block-id "including-parent" false))
                                         (state/hide-custom-context-menu!)))))))])
       (ui/menu-link
-       {:key "Make step form"
+       {:key "Make step questions"
         :on-click (fn [e]
                     (util/stop e)
                     (reset! edit? true))}
-       "Make step form"))))
+       "Make step questions"))))
 
 (rum/defc block-context-menu-content
   [target block-id]
@@ -254,6 +277,8 @@
            "Copy block ref")
 
           (block-template block-id)
+
+          (block-step-template block-id)
 
           ;; (ui/menu-link
           ;;  {:key "Make template"

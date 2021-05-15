@@ -1193,12 +1193,16 @@
   (state/clear-edit!)
   (state/set-selection-blocks! blocks))
 
+(defn get-all-blocks-by-input-id [input-id]
+  (let [input (gdom/getElement input-id)
+        blocks-container (util/rec-get-blocks-container input)
+        blocks (dom/by-class blocks-container "ls-block")]
+    blocks))
+
 (defn select-all-blocks!
   []
   (when-let [current-input-id (state/get-edit-input-id)]
-    (let [input (gdom/getElement current-input-id)
-          blocks-container (util/rec-get-blocks-container input)
-          blocks (dom/by-class blocks-container "ls-block")]
+    (let [blocks (get-all-blocks-by-input-id current-input-id)]
       (doseq [block blocks]
         (dom/add-class! block "selected noselect"))
       (exit-editing-and-set-selected-blocks! blocks))))
@@ -2277,86 +2281,87 @@
     (state/set-editor-show-block-search! false)
     (util/cursor-move-forward input 2)))
 
-(defn template-on-chosen-handler
-  [input id q format edit-block edit-content]
-  (fn [[template db-id] _click?]
-    (if-let [block (db/entity db-id)]
-      (let [new-level (:block/level edit-block)
-            properties (:block/properties block)
-            block-uuid (:block/uuid block)
-            including-parent? (not= (get properties "including-parent") "false")
-            template-parent-level (:block/level block)
-            pattern (config/get-block-pattern format)
-            content
-            (block-handler/get-block-full-content
-             (state/get-current-repo)
-             (:block/uuid block)
-             (fn [{:block/keys [uuid level content properties] :as block}]
-               (let [parent? (= uuid block-uuid)
-                     ignore-parent? (and parent? (not including-parent?))]
-                 (if ignore-parent?
-                   ""
-                   (let [new-level (+ new-level
-                                      (- level template-parent-level
-                                         (if (not including-parent?) 1 0)))
-                         properties' (dissoc (into {} properties) "id" "custom_id" "template" "including-parent")]
-                     (-> content
-                         (string/replace-first (apply str (repeat level pattern))
-                                               (apply str (repeat new-level pattern)))
-                         text/remove-properties!
-                         (text/rejoin-properties properties')))))))
-            content (if (string/includes? (string/trim edit-content) "\n")
-                      content
-                      (text/remove-level-spaces content format))
-            content (template/resolve-dynamic-template! content)]
-        (state/set-editor-show-template-search! false)
-        (insert-command! id content format {})))
-    (when-let [input (gdom/getElement id)]
-      (.focus input))))
 
-(defn step-template-on-chosen-handler
-  [input id q format edit-block edit-content]
-  (fn [[template db-id] _click?]
-    (println (str "step-template-on-chosen-handler, input = " input ", id = " id ", q = " q ", format = " format ", edit-block = " edit-block ", edit-content = " edit-content ", template = " template ", db-id = " db-id))
-    (if-let [block (db/entity db-id)]
-      (let [new-level (:block/level edit-block)
-            properties (:block/properties block)
-            block-uuid (:block/uuid block)
-            including-parent? (not= (get properties "including-parent") "false")
-            template-parent-level (:block/level block)
-            pattern (config/get-block-pattern format)
-            content
-
-            ;;TODO Modify content. 
+(defn generate-template-content
+              ;;TODO Modify content. 
             ;;Every question except tagged as "title_question":
             ;;  - Add empty sub-item for answer
             ;;  - replace question by reference to block.
             ;; "title_question" question - add to title along with <% time %> and [[page for step_form]]            
+  [edit-block block format]
+  (println (str "generate-template-content for block " block))
+  (let [properties (:block/properties block)
+        including-parent? (not= (get properties "including-parent") "false")
+        template-parent-level (:block/level block)
+        new-level (:block/level edit-block)
+        pattern (config/get-block-pattern format)
+        block-uuid (:block/uuid block)]
+    (block-handler/get-block-full-content
+     (state/get-current-repo)
+     (:block/uuid block)
+     (fn [{:block/keys [uuid level content properties] :as block}]
+       (let [parent? (= uuid block-uuid)
+             ignore-parent? (and parent? (not including-parent?))]
+         (if ignore-parent?
+           ""
+           (let [new-level (+ new-level
+                              (- level template-parent-level
+                                 (if (not including-parent?) 1 0)))
+                 properties' (dissoc (into {} properties) "id" "custom_id" "template" "including-parent")]
+             (-> content
+                 (string/replace-first (apply str (repeat level pattern))
+                                       (apply str (repeat new-level pattern)))
+                 text/remove-properties!
+                 (text/rejoin-properties properties')))))))))
 
-            (block-handler/get-block-full-content
-             (state/get-current-repo)
-             (:block/uuid block)
-             (fn [{:block/keys [uuid level content properties] :as block}]
-               (let [parent? (= uuid block-uuid)
-                     ignore-parent? (and parent? (not including-parent?))]
-                 (if ignore-parent?
-                   ""
-                   (let [new-level (+ new-level
-                                      (- level template-parent-level
-                                         (if (not including-parent?) 1 0)))
-                         properties' (dissoc (into {} properties) "id" "custom_id" "step_form" "first_answer_to_title" "reward_for_answer" "including-parent")]
-                     (-> content
-                         (string/replace-first (apply str (repeat level pattern))
-                                               (apply str (repeat new-level pattern)))
-                         text/remove-properties!
-                         (text/rejoin-properties properties')))))))
-            
+(defn generate-step-template-content
+              ;;TODO Modify content. 
+            ;;Every question except tagged as "title_question":
+            ;;  - Add empty sub-item for answer
+            ;;  - replace question by reference to block.
+            ;; "title_question" question - add to title along with <% time %> and [[page for step_form]]            
+  [edit-block block format]
+  (println (str "generate-step-template-content for block " block))
+  (let [properties (:block/properties block)
+        including-parent? (not= (get properties "including-parent") "false")
+        template-parent-level (:block/level block)
+        new-level (:block/level edit-block)
+        pattern (config/get-block-pattern format)
+        block-uuid (:block/uuid block)]
+    (block-handler/get-block-full-content
+     (state/get-current-repo)
+     (:block/uuid block)
+     (fn [{:block/keys [uuid level content properties] :as block}]
+       (let [parent? (= uuid block-uuid)
+             ignore-parent? (and parent? (not including-parent?))]
+         (if ignore-parent?
+           ""
+           (let [new-level (+ new-level
+                              (- level template-parent-level
+                                 (if (not including-parent?) 1 0)))
+                 properties' (dissoc (into {} properties) "id" "custom_id" "template" "step_form" "first_answer_to_title" "reward_for_answer" "answer_reward" "including-parent")]
+             (-> content
+                 (string/replace-first (apply str (repeat level pattern))
+                                       (apply str (repeat new-level pattern)))
+                 text/remove-properties!
+                 (text/rejoin-properties properties')))))))))
 
+(defn template-on-chosen-handler
+  [template-type input id q format edit-block edit-content]
+  (fn [[template db-id] _click?]
+    (if-let [block (db/entity db-id)]
+      (let [content (case template-type 
+                      :general-template (generate-template-content edit-block block format)
+                      :step-template (generate-step-template-content edit-block block format))
             content (if (string/includes? (string/trim edit-content) "\n")
                       content
                       (text/remove-level-spaces content format))
             content (template/resolve-dynamic-template! content)]
-        (state/set-editor-show-step-template-search! false)
+        
+        (case template-type 
+          :general-template (state/set-editor-show-template-search! false)
+          :step-template (state/set-editor-show-step-template-search! false))
+
         (insert-command! id content format {})))
     (when-let [input (gdom/getElement id)]
       (.focus input))))

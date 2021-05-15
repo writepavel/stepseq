@@ -162,7 +162,7 @@
                                   (state/set-editor-show-template-search! false))]
           (ui/auto-complete
            matched-templates
-           {:on-chosen   (editor-handler/template-on-chosen-handler input id q format edit-block edit-content)
+           {:on-chosen   (editor-handler/template-on-chosen-handler :general-template input id q format edit-block edit-content)
             :on-enter    non-exist-handler
             :empty-div   [:div.text-gray-500.pl-4.pr-4 "Search for a template"]
             :item-render (fn [[template _block-db-id]]
@@ -188,7 +188,7 @@
                                   (state/set-editor-show-step-template-search! false))]
           (ui/auto-complete
            matched-templates
-           {:on-chosen   (editor-handler/step-template-on-chosen-handler input id q format edit-block edit-content)
+           {:on-chosen   (editor-handler/template-on-chosen-handler :step-template input id q format edit-block edit-content)
             :on-enter    non-exist-handler
             :empty-div   [:div.text-gray-500.pl-4.pr-4 "Search for a step form"]
             :item-render (fn [[template-name _block-db-id]]

@@ -509,6 +509,56 @@
                 [:td [:span.text-gray-500.text-sm
                       (t :file/no-data)]]])]]))])))
 
+(rum/defc summary < rum/reactive
+  ;; {:did-mount (fn [state]
+  ;;               (let [current-repo (state/sub :git/current-repo)]
+  ;;                 (js/setTimeout #(db/remove-orphaned-pages! current-repo) 0))
+  ;;               state)}
+  []
+  (let [current-repo (state/sub :git/current-repo)]
+    (rum/with-context [[t] i18n/*tongue-context*]
+      [:div.flex-1
+       [:h1.title (t :summary)]
+       ])))
+
+(rum/defc new-steps < rum/reactive
+  ;; {:did-mount (fn [state]
+  ;;               (let [current-repo (state/sub :git/current-repo)]
+  ;;                 (js/setTimeout #(db/remove-orphaned-pages! current-repo) 0))
+  ;;               state)}
+  []
+  (let [current-repo (state/sub :git/current-repo)]
+    (rum/with-context [[t] i18n/*tongue-context*]
+      [:div.flex-1
+       [:h1.title (t :new-steps)]
+      ;;  (when current-repo
+      ;;   ;;  (let [pages (page-handler/get-pages-with-modified-at current-repo)]
+      ;;    (let [steps (db/get-all-step-templates)]
+      ;;      [:table.table-auto
+      ;;       [:thead
+      ;;        [:tr
+      ;;         [:th (t :page/name)]
+      ;;         [:th (t :file/last-modified-at)]]]
+      ;;       [:tbody
+      ;;        (for [page steps]
+      ;;          [:tr {:key page}
+      ;;           [:td [:a {:on-click (fn [e]
+      ;;                                 (let [repo (state/get-current-repo)
+      ;;                                       page (db/pull repo '[*] [:page/name (string/lower-case page)])]
+      ;;                                   (when (gobj/get e "shiftKey")
+      ;;                                     (state/sidebar-add-block!
+      ;;                                      repo
+      ;;                                      (:db/id page)
+      ;;                                      :page
+      ;;                                      {:page page}))))
+      ;;                     :href (rfe/href :page {:name page})}
+      ;;                 page]]
+      ;;           [:td [:span.text-gray-500.text-sm
+      ;;                 (t :file/no-data)]]])]])
+                      
+      ;;                 )
+                      ])))
+
 (rum/defcs new < rum/reactive
   (rum/local "" ::title)
   (mixins/event-mixin

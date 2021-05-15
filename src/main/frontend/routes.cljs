@@ -48,6 +48,14 @@
     {:name :all-pages
      :view page/all-pages}]
 
+   ["/new-steps"
+    {:name :new-steps
+     :view page/new-steps}]
+
+   ["/summary"
+    {:name :summary
+     :view page/summary}]
+
    ["/graph"
     {:name :graph
      :view page/global-graph}]

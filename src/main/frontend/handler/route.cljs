@@ -38,6 +38,10 @@
     "All files"
     :all-pages
     "All pages"
+    :new-steps
+    "New steps"
+    :summary
+    "Summary"
     :all-journals
     "All journals"
     :file

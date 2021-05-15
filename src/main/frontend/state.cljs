@@ -53,7 +53,7 @@
     ;; right sidebar
     :ui/settings-open? false
     :ui/sidebar-open? false
-    :ui/left-sidebar-open? false
+    :ui/left-sidebar-open? true
     :ui/theme (or (storage/get :ui/theme) "dark")
     :ui/wide-mode? false
     ;; :show-all, :hide-block-body, :hide-block-children

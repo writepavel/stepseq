@@ -77,13 +77,8 @@
     @apply shadow-none;
   }
 
-  .cp__header-left-menu {
-    display: none;
-  }
-
   .cp__header-logo {
-    display: flex;
-    align-items: center;
+    display: none;
   }
 }
 

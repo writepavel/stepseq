@@ -99,6 +99,16 @@
          {:title (t :all-pages)
           :options {:href (rfe/href :all-pages)}
           :icon svg/pages-sm})
+       
+       (when current-repo
+         {:title (t :new-steps)
+          :options {:href (rfe/href :new-steps)}
+          :icon svg/pages-sm})
+       
+       (when current-repo
+         {:title (t :summary)
+          :options {:href (rfe/href :summary)}
+          :icon svg/pages-sm})
 
        (when current-repo
          {:title (t :all-files)

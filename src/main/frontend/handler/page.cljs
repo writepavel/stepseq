@@ -1,6 +1,7 @@
 (ns frontend.handler.page
   (:require [clojure.string :as string]
             [frontend.db :as db]
+            [frontend.db.model :as db-model]
             [datascript.core :as d]
             [frontend.state :as state]
             [frontend.util :as util :refer-macros [profile]]
@@ -405,6 +406,32 @@
             (rename! old-name new-name)
             [false new-name]))
         [journal? old-name]))))
+
+(defn handle-add-line-to-today-journal!
+  [line-content]
+(let [last-journal-page (ffirst (db-model/get-latest-journals 1))
+      last-block (last (db/get-page-blocks (state/get-current-repo) last-journal-page))
+      last-empty? (>= 3 (count (:block/content last-block)))
+      heading-pattern (config/get-block-pattern (state/get-preferred-format))
+      pre-str (str heading-pattern heading-pattern)
+      new-content (if last-empty?
+                    (str pre-str " " line-content)
+                    (str (string/trimr (:block/content last-block))
+                         "\n"
+                         pre-str " " line-content))]
+  (editor-handler/insert-new-block-aux!
+   last-block
+   new-content
+   {:create-new-block? false
+    :ok-handler
+    (fn [_]
+      (notification/show! "Added to latest journal!" :success)
+      (editor-handler/clear-when-saved!)
+      )
+    :with-level? true
+    :new-level 2
+    :current-page last-journal-page})
+  ))
 
 (defn handle-add-page-to-contents!
   [page-name]

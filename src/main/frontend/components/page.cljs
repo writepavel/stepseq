@@ -531,33 +531,27 @@
     (rum/with-context [[t] i18n/*tongue-context*]
       [:div.flex-1
        [:h1.title (t :new-steps)]
-      ;;  (when current-repo
-      ;;   ;;  (let [pages (page-handler/get-pages-with-modified-at current-repo)]
-      ;;    (let [steps (db/get-all-step-templates)]
-      ;;      [:table.table-auto
-      ;;       [:thead
-      ;;        [:tr
-      ;;         [:th (t :page/name)]
-      ;;         [:th (t :file/last-modified-at)]]]
-      ;;       [:tbody
-      ;;        (for [page steps]
-      ;;          [:tr {:key page}
-      ;;           [:td [:a {:on-click (fn [e]
-      ;;                                 (let [repo (state/get-current-repo)
-      ;;                                       page (db/pull repo '[*] [:page/name (string/lower-case page)])]
-      ;;                                   (when (gobj/get e "shiftKey")
-      ;;                                     (state/sidebar-add-block!
-      ;;                                      repo
-      ;;                                      (:db/id page)
-      ;;                                      :page
-      ;;                                      {:page page}))))
-      ;;                     :href (rfe/href :page {:name page})}
-      ;;                 page]]
-      ;;           [:td [:span.text-gray-500.text-sm
-      ;;                 (t :file/no-data)]]])]])
-                      
-      ;;                 )
-                      ])))
+      ;;  [:p (str "Press button to make a new step")]
+       (when current-repo
+         (let [step-forms (editor-handler/get-all-step-templates)]
+           
+           [:table.table-auto
+            ;; [:thead
+            ;;  [:tr [:th "Name"] [:th "Questions Block Id"] [:th "Page Title"]]]
+            [:tbody
+             
+(for [step step-forms]
+  (let [step-name (key step)
+        step-block-id (val step)]
+    [:tr {:key step-block-id}
+     [:td (ui/button step-name 
+                     :on-click (fn []
+                                 (route-handler/go-to-journals-last-block!)
+                                 (page-handler/handle-add-line-to-today-journal! (str step-name " <% today %> <% time %> "))
+                                 ))]
+     [:td step-block-id]
+     ])
+  )]]))])))
 
 (rum/defcs new < rum/reactive
   (rum/local "" ::title)

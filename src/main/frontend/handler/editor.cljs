@@ -1776,6 +1776,13 @@
   [q]
   (search/step-template-search q))
 
+(defn get-all-step-templates
+  []
+  (let [templates (db/get-all-step-templates)]
+    (when (seq templates)
+      (let [result (keys templates)]
+        (vec (select-keys templates result))))))
+
 (defn get-matched-commands
   [input]
   (try

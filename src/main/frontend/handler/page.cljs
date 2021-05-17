@@ -407,7 +407,7 @@
             [false new-name]))
         [journal? old-name]))))
 
-(defn handle-add-line-to-today-journal!
+(defn handle-focus-new-journal-line!
   [line-content]
 (let [last-journal-page (ffirst (db-model/get-latest-journals 1))
       last-block (last (db/get-page-blocks (state/get-current-repo) last-journal-page))
@@ -424,9 +424,10 @@
    new-content
    {:create-new-block? false
     :ok-handler
-    (fn [_]
-      (notification/show! "Added to latest journal!" :success)
+    (fn [new-block]
+      (notification/show! (str "Answer step questions :)") :success)
       (editor-handler/clear-when-saved!)
+      (js/setTimeout #(editor-handler/focus-on-block! (:block/uuid new-block)) 500)
       )
     :with-level? true
     :new-level 2

@@ -546,8 +546,7 @@
     [:tr {:key step-block-id}
      [:td (ui/button step-name 
                      :on-click (fn []
-                                 (route-handler/go-to-journals-last-block!)
-                                 (page-handler/handle-add-line-to-today-journal! (str step-name " <% today %> <% time %> "))
+                                 (page-handler/handle-focus-new-journal-line! (str step-name " <% today %> <% time %> "))
                                  ))]
      [:td step-block-id]
      ])

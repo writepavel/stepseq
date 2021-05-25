@@ -34,6 +34,7 @@
   thheller/shadow-cljs        {:mvn/version "2.11.14"}
   expound/expound             {:mvn/version "0.8.6"}
   lambdaisland/glogi          {:mvn/version "1.0.74"}
+  philoskim/debux             {:mvn/version "0.7.9"}
   binaryage/devtools          {:mvn/version "1.0.2"}}
 
  :aliases {:cljs {:extra-paths ["src/dev-cljs/" "src/test/" "src/electron/"]

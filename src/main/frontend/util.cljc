@@ -1,25 +1,27 @@
 (ns frontend.util
   #?(:clj (:refer-clojure :exclude [format]))
   (:require
-      #?(:cljs [cljs-bean.core :as bean])
-      #?(:cljs [cljs-time.coerce :as tc])
-      #?(:cljs [cljs-time.core :as t])
-      #?(:cljs [cljs-time.format :as format])
-      #?(:cljs [dommy.core :as d])
-      #?(:cljs ["/frontend/caret_pos" :as caret-pos])
-      #?(:cljs ["/frontend/selection" :as selection])
-      #?(:cljs ["/frontend/utils" :as utils])
-      #?(:cljs ["path" :as nodePath])
-      #?(:cljs [goog.dom :as gdom])
-      #?(:cljs [goog.object :as gobj])
-      #?(:cljs [goog.string :as gstring])
-      #?(:cljs [goog.string.format])
-      #?(:cljs [goog.userAgent])
-      [clojure.string :as string]
-      [clojure.pprint :refer [pprint]]
-      [clojure.walk :as walk]
-      [frontend.regex :as regex]
-      [promesa.core :as p]))
+   #?(:cljs [cljs-bean.core :as bean])
+   #?(:cljs [cljs-time.coerce :as tc])
+   #?(:cljs [cljs-time.core :as t])
+   #?(:cljs [cljs-time.format :as format])
+   #?(:cljs [dommy.core :as d])
+   #?(:cljs ["/frontend/caret_pos" :as caret-pos])
+   #?(:cljs ["/frontend/selection" :as selection])
+   #?(:cljs ["/frontend/utils" :as utils])
+   #?(:cljs ["path" :as nodePath])
+   #?(:cljs [goog.dom :as gdom])
+   #?(:cljs [goog.object :as gobj])
+   #?(:cljs [goog.string :as gstring])
+   #?(:cljs [goog.string.format])
+   #?(:cljs [goog.userAgent])
+   [clojure.string :as string]
+   [clojure.pprint :refer [pprint]]
+   [clojure.walk :as walk]
+   [frontend.regex :as regex]
+   [promesa.core :as p]
+   [debux.cs.core :as dbx :refer-macros [clog clogn dbg dbgn break
+                                       clog_ clogn_ dbg_ dbgn_ break_]]))
 
 #?(:cljs (goog-define NODETEST false)
    :clj (def NODETEST false))
@@ -377,6 +379,7 @@
 #?(:cljs
     (defn scroll-to-element
       [elem-id]
+      (println (str "scroll-to-element " elem-id))
       (when-not (re-find #"^/\d+$" elem-id)
         (when elem-id
           (when-let [elem (gdom/getElement elem-id)]
@@ -386,6 +389,14 @@
                                    0
                                    (- top 80)))
                           :behavior "smooth"}))))))
+
+#?(:cljs
+   (defn get-block-dom-id
+     [block-id]     
+     (when block-id
+       (when-let [elem (gdom/getElementByClass block-id)]
+         (clogn [block-id])
+         (.-id elem)))))
 
 #?(:cljs
    (defn scroll-to

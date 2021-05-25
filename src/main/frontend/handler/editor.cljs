@@ -46,7 +46,8 @@
             [frontend.handler.repeated :as repeated]
             [frontend.template :as template]
             [clojure.core.async :as async]
-            [lambdaisland.glogi :as log]
+            [debux.cs.core :as dbx :refer-macros [clog clogn dbg dbgn break
+                                                clog_ clogn_ dbg_ dbgn_ break_]]
             [cljs.core.match :refer-macros [match]]))
 
 ;; FIXME: should support multiple images concurrently uploading
@@ -737,8 +738,10 @@
         (gobj/set input "value" ""))
 
       (when ok-handler
-        (ok-handler
-         (if edit-self? (first blocks) (last blocks))))
+        (let [ok-handler-block (if ok-handler-on-next-block?
+                                 (second blocks)
+                                 (if edit-self? (first blocks) (last blocks)))]
+          (ok-handler ok-handler-block)))
 
       ;; update page blocks cache if exists
       (when page-blocks-atom
@@ -760,8 +763,9 @@
 (defn insert-new-block-aux!
   [{:block/keys [uuid content meta file dummy? level repo page format properties collapsed? pre-block?] :as block}
    value
-   {:keys [create-new-block? ok-handler with-level? new-level current-page blocks-container-id]
+   {:keys [create-new-block? ok-handler ok-handler-on-next-block? with-level? new-level current-page blocks-container-id]
     :as opts}]
+  (println "insert-new-block-aux!")
   (let [value (or value "")
         block-page? (and current-page (util/uuid-string? current-page))
         block-self? (= uuid (and block-page? (medley/uuid current-page)))
@@ -776,6 +780,7 @@
         file (db/entity repo (:db/id file))
         block-has-children? (seq (:block/children block))
         [fst-block-text snd-block-text] (compute-fst-snd-block-text block format value pos level new-level block-self? block-has-children? with-level?)]
+    (clogn [page file new-level value (count value) (util/get-input-pos input) (zero? (util/get-input-pos input)) fst-block-text snd-block-text])
     (cond
       (and (not file) page)
       (let [value (str value "\n" snd-block-text)]
@@ -2295,12 +2300,11 @@
             ;;  - Add empty sub-item for answer
             ;;  - replace question by reference to block.
             ;; "title_question" question - add to title along with <% time %> and [[page for step_form]]            
-  [edit-block block format]
+  [block format new-level]
   (println (str "generate-template-content for block " block))
   (let [properties (:block/properties block)
         including-parent? (not= (get properties "including-parent") "false")
-        template-parent-level (:block/level block)
-        new-level (:block/level edit-block)
+        template-parent-level (:block/level block)        
         pattern (config/get-block-pattern format)
         block-uuid (:block/uuid block)]
     (block-handler/get-block-full-content
@@ -2327,12 +2331,11 @@
             ;;  - Add empty sub-item for answer
             ;;  - replace question by reference to block.
             ;; "title_question" question - add to title along with <% time %> and [[page for step_form]]            
-  [edit-block block format]
+  [block format new-level]
   (println (str "generate-step-template-content for block " block))
   (let [properties (:block/properties block)
         including-parent? (not= (get properties "including-parent") "false")
         template-parent-level (:block/level block)
-        new-level (:block/level edit-block)
         pattern (config/get-block-pattern format)
         block-uuid (:block/uuid block)]
     (block-handler/get-block-full-content
@@ -2353,25 +2356,42 @@
                  text/remove-properties!
                  (text/rejoin-properties properties')))))))))
 
-(defn template-on-chosen-handler
-  [template-type input id q format edit-block edit-content]
-  (fn [[template db-id] _click?]
-    (if-let [block (db/entity db-id)]
-      (let [content (case template-type 
-                      :general-template (generate-template-content edit-block block format)
-                      :step-template (generate-step-template-content edit-block block format))
-            content (if (string/includes? (string/trim edit-content) "\n")
-                      content
-                      (text/remove-level-spaces content format))
-            content (template/resolve-dynamic-template! content)]
-        
-        (case template-type 
-          :general-template (state/set-editor-show-template-search! false)
-          :step-template (state/set-editor-show-step-template-search! false))
+(debux.cs.core/clogn (defn template-on-chosen-handler
+                       [template-type input id q format edit-block edit-content]
+                       (println "template-on-chosen-handler")
+                       (debux.cs.core/clogn [template-type input id q format edit-block edit-content])
+                       (fn [[template-name template-db-id] _click?]
+                         (debux.cs.core/clogn [template-name template-db-id])
+                         (debux.cs.core/clogn (let [;; TODO add dummy block if first line has deleted - instead of calculating by container.
+                                                    page-db-id-by-container (first (db-model/get-page-ids-by-names [(:block/container edit-block)]))
+                                                    edit-block-page (or (:block/page edit-block) (db/entity page-db-id-by-container))
+                                                    edit-block-file (or (:block/file edit-block)  (:page/file (db/entity page-db-id-by-container)))
+                                                    edit-block (if-not (:block/uuid edit-block)  ;; rare case when first line is empty or has been deleted
+                                                                 (merge edit-block
+                                                                        {:block/content (or (:block/content edit-block) " new dummy content to be replaced")
+                                                                         :block/level (or (:block/level edit-block) 2)
+                                                                         :block/page edit-block-page
+                                                                         :block/file edit-block-file})
+                                                                 edit-block)]
+                                                ;; save block if it is the first on the page
+                                                (if-not (:block/uuid edit-block)
+                                                  (save-block-if-changed! edit-block " "))
+                                                (if-let [template-block (db/entity template-db-id)]
+                                                  (debux.cs.core/clogn (let [new-level (:block/level edit-block)
+                                                                             content (case template-type
+                                                                                       :general-template (generate-template-content template-block format new-level)
+                                                                                       :step-template (generate-step-template-content template-block format new-level))
+                                                                             content (if (string/includes? (string/trim edit-content) "\n")
+                                                                                       content
+                                                                                       (text/remove-level-spaces content format))
+                                                                             content (template/resolve-dynamic-template! content)]
+                                                                         (case template-type
+                                                                           :general-template (state/set-editor-show-template-search! false)
+                                                                           :step-template (state/set-editor-show-step-template-search! false))
 
-        (insert-command! id content format {})))
-    (when-let [input (gdom/getElement id)]
-      (.focus input))))
+                                                                         (insert-command! id content format {}))))))
+                         (when-let [input (gdom/getElement id)]
+                           (.focus input)))))
 
 (defn keydown-enter-handler
   [state input]

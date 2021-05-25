@@ -28,7 +28,9 @@
             [cljs-time.core :as t]
             [cljs-time.coerce :as tc]
             [cljs.reader :as reader]
-            [goog.object :as gobj]))
+            [goog.object :as gobj]
+            [debux.cs.core :as dbx :refer-macros [clog clogn dbg dbgn break
+                                                  clog_ clogn_ dbg_ dbgn_ break_]]))
 
 (defn- get-directory
   [journal?]
@@ -433,6 +435,47 @@
     :new-level 2
     :current-page last-journal-page})
   ))
+
+(defn handle-focus-new-step!
+  [template-type step-block-id]
+(let [last-journal-page-name (str (ffirst (db-model/get-latest-journals 1)))
+      last-journal-page-db-id (first (db-model/get-page-ids-by-names [last-journal-page-name]))
+      last-journal-file (db/get-file-page (:file/path (db-model/get-page-file last-journal-page-name)))
+      last-block (last (db/get-page-blocks (state/get-current-repo) last-journal-page-name))
+      last-block-page-data {:block/file (:page/file (db/entity last-journal-page-db-id))
+                            :block/page (db/entity last-journal-page-db-id)}
+      format (:block/format last-block)
+      dummy-block (merge last-block-page-data 
+                         (last (block-handler/with-dummy-block
+                               (db/get-page-blocks (state/get-current-repo) last-journal-page-name) format)))
+      last-empty? (>= 3 (count (:block/content dummy-block)))
+      heading-pattern (config/get-block-pattern (state/get-preferred-format))
+      pre-str (str heading-pattern heading-pattern)
+      new-level 2 ;;(:block/level last-block)
+      step-block (db/entity step-block-id)
+      step-block-content (:block/content step-block)
+      content (case template-type
+                :general-template (editor-handler/generate-template-content step-block format new-level)
+                :step-template (editor-handler/generate-step-template-content step-block format new-level))
+      ;; content (text/remove-level-spaces content format)
+      content (template/resolve-dynamic-template! content)
+      content (str (:block/content dummy-block) "\n" content)]
+  (clogn [step-block-id last-journal-page-name last-block dummy-block step-block last-block-page-data step-block-content content new-level])
+  (editor-handler/insert-new-block-aux!
+         dummy-block
+         content
+         {:create-new-block? false
+          :ok-handler
+          (fn [new-block2]
+            (let [new-block2-id (:block/uuid new-block2)]
+              (clogn new-block2)
+              (notification/show! (str "Answer step questions :)") :success)
+              (editor-handler/clear-when-saved!)
+              (js/setTimeout #(editor-handler/focus-on-block! new-block2-id) 500)))
+          :ok-handler-on-next-block? true
+          :with-level? true
+          :new-level 2
+          :current-page last-journal-page-name})))
 
 (defn handle-add-page-to-contents!
   [page-name]

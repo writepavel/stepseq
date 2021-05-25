@@ -12,6 +12,7 @@
             [frontend.handler.repo :as repo-handler]
             [frontend.handler.git :as git-handler]
             [frontend.handler.editor :as editor-handler]
+            [frontend.handler.block :as block-handler]
             [frontend.handler.project :as project-handler]
             [frontend.handler.web.nfs :as web-nfs]
             [frontend.handler.notification :as notification]
@@ -28,6 +29,7 @@
             [cljs-time.core :as t]
             [cljs-time.coerce :as tc]
             [cljs.reader :as reader]
+            [frontend.template :as template]
             [goog.object :as gobj]
             [debux.cs.core :as dbx :refer-macros [clog clogn dbg dbgn break
                                                   clog_ clogn_ dbg_ dbgn_ break_]]))

@@ -653,7 +653,8 @@
     [fst-block-text snd-block-text]))
 
 (defn insert-block-to-existing-file!
-  [repo block file page file-path file-content value fst-block-text snd-block-text pos format input {:keys [create-new-block? ok-handler with-level? new-level current-page blocks-container-id]}]
+  [repo block file page file-path file-content value fst-block-text snd-block-text pos format input
+   {:keys [create-new-block? ok-handler ok-handler-on-next-block? with-level? new-level current-page blocks-container-id]}]
   (let [{:block/keys [meta pre-block?]} block
         original-id (:block/uuid block)
         block-has-children? (seq (:block/children block))

@@ -126,7 +126,7 @@
 
 (def hidden-properties
   (set/union
-   #{"id" "custom_id" "heading" "background_color"
+   #{"id" "custom_id" "heading" "background_color" "step_question"
      "created_at" "last_modified_at"}
    config/markers))
 
@@ -187,6 +187,9 @@
    (let [content (string/triml content)
          properties (if (= (get properties "heading") "false")
                       (dissoc properties "heading")
+                      properties)
+         properties (if (= (get properties "step_question") "false")
+                      (dissoc properties "step_question")
                       properties)
          properties (if remove-blank?
                       (remove (fn [[k _v]] (string/blank? k)) properties)

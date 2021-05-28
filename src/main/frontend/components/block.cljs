@@ -1026,7 +1026,8 @@
         collapsed? (rum/react *collapsed?)
         control-show? (util/react *control-show?)
         dark? (= "dark" (state/sub :ui/theme))
-        heading? (= (get (:block/properties block) "heading") "true")]
+        heading? (= (get (:block/properties block) "heading") "true")
+        step-question? (= (get (:block/properties block) "step_question") "true")]
     [:div.mr-2.flex.flex-row.items-center
      {:style {:height 24
               :margin-top (if (and heading? (<= level 6))
@@ -1221,11 +1222,15 @@
         tags (block-tags-cp t)
         contents? (= (:id config) "contents")
         heading? (= (get properties "heading") "true")
+        step-question? (= (get properties "step_question") "true")
         bg-color (get properties "background_color")]
     (when level
-      (let [element (if (and (<= level 6) heading?)
+      (let [element (cond  
+                      (and (<= level 6) heading?)
                       (keyword (str "h" level))
-                      :div)]
+                      step-question?
+                      (keyword "sub")
+                      :else :div)]
         (->elem
          element
          (merge
@@ -1234,12 +1239,12 @@
                      (not (string/blank? marker))
                      (not= "nil" marker))
             {:class (str (string/lower-case marker))})
-          (when bg-color
-            {:style {:background-color bg-color
-                     :padding-left 6
-                     :padding-right 6
-                     :color "#FFFFFF"}
-             :class "with-bg-color"}))
+          (cond bg-color {:style {:background-color bg-color
+                                  :padding-left 6
+                                  :padding-right 6
+                                  :color "#FFFFFF"}
+                          :class "with-bg-color"}
+                step-question? {:style { :color "steelblue"}}))
          (remove-nils
           (concat
            [(when-not slide? checkbox)

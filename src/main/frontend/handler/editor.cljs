@@ -2342,7 +2342,9 @@
 (defn replace-step-question [content format question-uuid level]
   (let [pattern (config/get-block-pattern format)
         re (re-pattern (str "(" pattern "*)(\\s*)(.*)(\\s*)"))]
-    (string/replace-first content re (str "$1 ((" question-uuid ")) \n" (apply str (repeat (+ 1 level) pattern))))))
+    (string/replace-first content re (str "$1 ((" question-uuid ")) \n" 
+                                          ":PROPERTIES:\n:step_question: true\n:END:\n"
+                                          (apply str (repeat (+ 1 level) pattern))))))
 
 (defn generate-step-template-content
             ;;Every question if add-first-question-to-title=false:

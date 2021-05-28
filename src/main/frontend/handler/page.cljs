@@ -459,14 +459,13 @@
       content (case template-type
                 :general-template (editor-handler/generate-template-content step-block format new-level)
                 :step-template (editor-handler/generate-step-template-content step-block format new-level))
-      ;; content (text/remove-level-spaces content format)
       content (template/resolve-dynamic-template! content)
       content (str (:block/content dummy-block) "\n" content)]
   (clogn [step-block-id last-journal-page-name last-block dummy-block step-block last-block-page-data step-block-content content new-level])
   (editor-handler/insert-new-block-aux!
          dummy-block
          content
-         {:create-new-block? false
+         {:create-new-block? true
           :ok-handler
           (fn [new-block2]
             (let [new-block2-id (:block/uuid new-block2)]

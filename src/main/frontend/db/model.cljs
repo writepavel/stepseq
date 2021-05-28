@@ -16,6 +16,8 @@
             [cljs-time.core :as t]
             [cljs-time.coerce :as tc]
             [frontend.util :as util :refer [react] :refer-macros [profile]]
+            [debux.cs.core :as dbx :refer-macros [clog clogn dbg dbgn break
+                                                  clog_ clogn_ dbg_ dbgn_ break_]]            
             [frontend.db-schema :as db-schema]))
 
 ;; TODO: extract to specific models and move data transform logic to the
@@ -507,11 +509,16 @@
   (when-let [db (conn/get-conn repo)]
     (count (d/datoms db :avet :block/page page-id))))
 
-(defn get-block-parent
+(defn get-block-parent-by-id
   [repo block-id]
   (when-let [conn (conn/get-conn repo)]
-    (when-let [block (d/entity conn [:block/uuid block-id])]
-      (d/entity conn [:block/children [:block/uuid block-id]]))))
+      (d/entity conn [:block/children block-id])))
+
+(defn get-block-parent
+  [repo block-uuid]
+  (when-let [conn (conn/get-conn repo)]
+    (when-let [block (d/entity conn [:block/uuid block-uuid])]
+      (d/entity conn [:block/children (:db/id block)]))))
 
 ;; non recursive query
 (defn get-block-parents

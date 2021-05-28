@@ -652,6 +652,19 @@
                           format))]
     [fst-block-text snd-block-text]))
 
+(defn is-block-question-link? [repo block-id]
+                         (let [block-link-pattern #"\(\(([a-f0-9]{8}(-[a-f0-9]{4}){4}[a-f0-9]{8})\)\)"]                           
+                           (or (when-let [block-link-uuid (second (re-find block-link-pattern (:block/content (db/entity block-id))))]
+                                 (when-let [source-block (db/get-block-by-uuid block-link-uuid)]
+                                   (when-let [source-block-parent (db-model/get-block-parent-by-id repo (:db/id source-block))]
+                                     (contains? (:block/properties source-block-parent) "step_form"))))
+                               false)))
+
+(defn is-block-place-for-answer? [repo block-id]
+  (let [block-parent-id (:db/id (db-model/get-block-parent-by-id repo block-id))]
+            (clogn [(is-block-question-link? repo block-parent-id)])
+            (is-block-question-link? repo block-parent-id)))
+
 (defn insert-block-to-existing-file!
   [repo block file page file-path file-content value fst-block-text snd-block-text pos format input
    {:keys [create-new-block? ok-handler ok-handler-on-next-block? with-level? new-level current-page blocks-container-id]}]
@@ -2296,11 +2309,6 @@
 
 
 (defn generate-template-content
-              ;;TODO Modify content. 
-            ;;Every question except tagged as "title_question":
-            ;;  - Add empty sub-item for answer
-            ;;  - replace question by reference to block.
-            ;; "title_question" question - add to title along with <% time %> and [[page for step_form]]            
   [block format new-level]
   (println (str "generate-template-content for block " block))
   (let [properties (:block/properties block)
@@ -2326,36 +2334,55 @@
                  text/remove-properties!
                  (text/rejoin-properties properties')))))))))
 
+(defn replace-step-title [content format]
+  (let [pattern (config/get-block-pattern format)
+        re (re-pattern (str "(" pattern "*)(\\s*)(.*)(\\s*)"))]
+    (string/replace-first content re "$1$2[[$3]] <% time %> ")))
+
+(defn replace-step-question [content format question-uuid level]
+  (let [pattern (config/get-block-pattern format)
+        re (re-pattern (str "(" pattern "*)(\\s*)(.*)(\\s*)"))]
+    (string/replace-first content re (str "$1 ((" question-uuid ")) \n" (apply str (repeat (+ 1 level) pattern))))))
+
 (defn generate-step-template-content
-              ;;TODO Modify content. 
-            ;;Every question except tagged as "title_question":
+            ;;Every question if add-first-question-to-title=false:
             ;;  - Add empty sub-item for answer
             ;;  - replace question by reference to block.
-            ;; "title_question" question - add to title along with <% time %> and [[page for step_form]]            
+            ;; if add-first-question-to-title=true add to title first question along with <% time %>
   [block format new-level]
   (println (str "generate-step-template-content for block " block))
   (let [properties (:block/properties block)
         including-parent? (not= (get properties "including-parent") "false")
         template-parent-level (:block/level block)
         pattern (config/get-block-pattern format)
-        block-uuid (:block/uuid block)]
-    (block-handler/get-block-full-content
-     (state/get-current-repo)
-     (:block/uuid block)
-     (fn [{:block/keys [uuid level content properties] :as block}]
-       (let [parent? (= uuid block-uuid)
-             ignore-parent? (and parent? (not including-parent?))]
-         (if ignore-parent?
-           ""
-           (let [new-level (+ new-level
-                              (- level template-parent-level
-                                 (if (not including-parent?) 1 0)))
-                 properties' (dissoc (into {} properties) "id" "custom_id" "template" "step_form" "first_answer_to_title" "reward_for_answer" "answer_reward" "including-parent")]
-             (-> content
-                 (string/replace-first (apply str (repeat level pattern))
-                                       (apply str (repeat new-level pattern)))
-                 text/remove-properties!
-                 (text/rejoin-properties properties')))))))))
+        block-uuid (:block/uuid block)
+        full-step-content (block-handler/get-block-full-content
+                           (state/get-current-repo)
+                           (:block/uuid block)
+                           (fn [{:block/keys [uuid level title content properties] :as next-block}]
+                             (let [parent? (= uuid block-uuid)
+                                   step-question? (contains? (set (map :block/uuid (:block/children block))) uuid)
+                                   ignore-parent? (and parent? (not including-parent?))
+                                   sub-sub-child? (and (not parent?) (not step-question?))]
+                               (cond
+                                 ignore-parent? ""
+                                 sub-sub-child? ""
+                                 :else (let [new-level (+ new-level
+                                                          (- level template-parent-level
+                                                             (if (not including-parent?) 1 0)))
+                                             properties' (dissoc (into {} properties) "id" "custom_id" "template" "step_form" "first_answer_to_title" "reward_for_answer" "answer_reward" "including-parent")
+                                             content (-> content
+                                                         (string/replace-first (apply str (repeat level pattern))
+                                                                               (apply str (repeat new-level pattern)))
+                                                         text/remove-properties!)
+                                             content (if parent? (replace-step-title content format)
+                                                         (replace-step-question content format uuid new-level))]
+                                         (text/rejoin-properties content properties'))))))]
+    
+                          ;; new line required for `:create-new-block? true` on adding block to file to be working ok.
+                          ;; it enables addintg steps by buttons and steps are with the same indent level.
+                          (str full-step-content "\n"  
+                               (apply str (repeat new-level pattern)))))
 
 (debux.cs.core/clogn (defn template-on-chosen-handler
                        [template-type input id q format edit-block edit-content]

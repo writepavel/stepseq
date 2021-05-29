@@ -126,7 +126,7 @@
 
 (def hidden-properties
   (set/union
-   #{"id" "custom_id" "heading" "background_color" "step_question"
+   #{"id" "custom_id" "heading" "background_color" "step_question" "reward_for_answer" "first_answer_to_title"
      "created_at" "last_modified_at"}
    config/markers))
 

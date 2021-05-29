@@ -168,23 +168,25 @@
           {:auto-focus true
            :on-change (fn [e]
                         (reset! step-name (util/evalue e)))}]         
-         [:p "Step Icon (You can try emojipedia.org)"]
+         [:p "Step Icon. Copy from " [:a {:href "https://www.emojipedia.org" :target "_blank"} "emojipedia.org"]]
+         ;; <a href= "https://www.thesitewizard.com/" target= "_blank" >thesitewizard.com</a>
          [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
           {:value @step-icon
            :on-change (fn [e]
-                        (reset! step-icon (util/evalue e)))}]         
-         (checkbox-first-answer-as-step-title first-answer-as-step-title?)
-         [:p "Reward for each answer:"]
-         [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
-          {:value @reward-for-answer
-           :on-change (fn [e]
-                        (reset! reward-for-answer (util/evalue e)))}]
-         (when has-children?
-           (template-checkbox including-parent?))
+                        (reset! step-icon (util/evalue e)))}]          
+        ;;  (checkbox-first-answer-as-step-title first-answer-as-step-title?)
+        ;;  [:p "Reward for each answer:"]
+        ;;  [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
+        ;;   {:value @reward-for-answer
+        ;;    :on-change (fn [e]
+        ;;                 (reset! reward-for-answer (util/evalue e)))}]
+        ;;  (when has-children?
+        ;;    (template-checkbox including-parent?))
          (ui/button "Submit"
                     :on-click (fn []
                                 (let [title (string/trim @step-name)
-                                      reward-value (js/parseFloat (.replace (string/trim @reward-for-answer) "," "."))
+                                      reward-value 0.1 
+                                      ;; (js/parseFloat (.replace (string/trim @reward-for-answer) "," "."))
                                       step-picture (string/trim @step-icon)]
                                   (when (not (string/blank? title))
                                     (if (page-handler/step-template-exists? title)

@@ -549,7 +549,7 @@
                                 ;;  (page-handler/handle-focus-new-journal-line! (str step-name " <% today %> <% time %> "))
                                  (page-handler/handle-focus-new-step! :step-template step-block-id)
                                  ))]
-     [:td step-block-id]
+    ;;  [:td step-block-id]
      ])
   )]]))])))
 

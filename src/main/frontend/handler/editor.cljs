@@ -638,7 +638,7 @@
         :error)
 
        :else
-       (let [value (re-build-block-value block format value properties)
+       (let [value (operation-on-first-content-only-and-join #(re-build-block-value block format % properties) value)
              content-changed? (not= (string/trim content) (string/trim value))]
          (when content-changed?
            (let [file (db/entity repo (:db/id file))]

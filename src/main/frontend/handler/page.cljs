@@ -445,6 +445,7 @@
       last-journal-page-db-id (first (db-model/get-page-ids-by-names [last-journal-page-name]))
       last-journal-file (db/get-file-page (:file/path (db-model/get-page-file last-journal-page-name)))
       last-block (last (db/get-page-blocks (state/get-current-repo) last-journal-page-name))
+      last-block-content (:block/content last-block)
       last-block-page-data {:block/file (:page/file (db/entity last-journal-page-db-id))
                             :block/page (db/entity last-journal-page-db-id)}
       format (:block/format last-block)
@@ -458,8 +459,8 @@
                 :step-template (editor-handler/generate-step-template-content step-block format new-level))
       content (text/remove-level-spaces content format)
       content (template/resolve-dynamic-template! content)
-      content (str (:block/content "\n" last-block) content)]
-  (clogn [step-block-id last-journal-page-name last-block step-block last-block-page-data step-block-content content new-level])
+      content (str last-block-content content)]
+  (clogn [last-block-content step-block-id last-journal-page-name last-block step-block last-block-page-data step-block-content content new-level])
   (editor-handler/insert-new-block-aux!
    last-block
    content

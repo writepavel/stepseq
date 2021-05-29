@@ -2401,7 +2401,10 @@
                                                          (apply str (repeat new-level pattern)))
                                    text/remove-properties!)
                        content (if parent? (replace-step-title content format properties)
-                                   (replace-step-question content format uuid new-level))]
+                                   (do 
+                                     (when-not (:block/pre-block? next-block)
+                                       (set-block-property! uuid "id" (str uuid)))
+                                     (replace-step-question content format uuid new-level)))]
                    (text/rejoin-properties content properties'))))))))
 
 (defn template-on-chosen-handler

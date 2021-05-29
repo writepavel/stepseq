@@ -20,6 +20,7 @@
             [frontend.handler.ui :as ui-handler]
             [frontend.commands :as commands]
             [frontend.date :as date]
+            [frontend.text :as text]
             [clojure.walk :as walk]
             [frontend.git :as git]
             [frontend.fs :as fs]
@@ -447,10 +448,6 @@
       last-block-page-data {:block/file (:page/file (db/entity last-journal-page-db-id))
                             :block/page (db/entity last-journal-page-db-id)}
       format (:block/format last-block)
-      dummy-block (merge last-block-page-data 
-                         (last (block-handler/with-dummy-block
-                               (db/get-page-blocks (state/get-current-repo) last-journal-page-name) format)))
-      last-empty? (>= 3 (count (:block/content dummy-block)))
       heading-pattern (config/get-block-pattern (state/get-preferred-format))
       pre-str (str heading-pattern heading-pattern)
       new-level 2 ;;(:block/level last-block)
@@ -459,24 +456,25 @@
       content (case template-type
                 :general-template (editor-handler/generate-template-content step-block format new-level)
                 :step-template (editor-handler/generate-step-template-content step-block format new-level))
+      content (text/remove-level-spaces content format)
       content (template/resolve-dynamic-template! content)
-      content (str (:block/content dummy-block) "\n" content)]
-  (clogn [step-block-id last-journal-page-name last-block dummy-block step-block last-block-page-data step-block-content content new-level])
+      content (str (:block/content "\n" last-block) content)]
+  (clogn [step-block-id last-journal-page-name last-block step-block last-block-page-data step-block-content content new-level])
   (editor-handler/insert-new-block-aux!
-         dummy-block
-         content
-         {:create-new-block? true
-          :ok-handler
-          (fn [new-block2]
-            (let [new-block2-id (:block/uuid new-block2)]
-              (clogn new-block2)
-              (notification/show! (str "Answer step questions :)") :success)
-              (editor-handler/clear-when-saved!)
-              (js/setTimeout #(editor-handler/focus-on-block! new-block2-id) 500)))
-          :ok-handler-on-next-block? true
-          :with-level? true
-          :new-level 2
-          :current-page last-journal-page-name})))
+   last-block
+   content
+   {:create-new-block? true
+    :ok-handler
+    (fn [new-block2]
+      (let [new-block2-id (:block/uuid new-block2)]
+        (clogn new-block2)
+        (notification/show! (str "Answer step questions :)") :success)
+        (editor-handler/clear-when-saved!)
+        (js/setTimeout #(editor-handler/focus-on-block! new-block2-id) 500)))
+    :ok-handler-on-next-block? true
+    :with-level? true
+    :new-level 2
+    :current-page last-journal-page-name})))
 
 (defn handle-add-page-to-contents!
   [page-name]

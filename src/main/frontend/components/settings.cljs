@@ -1,23 +1,25 @@
 (ns frontend.components.settings
-  (:require [rum.core :as rum]
-            [frontend.ui :as ui]
+  (:require [clojure.string :as string]
             [frontend.components.svg :as svg]
-            [frontend.handler.notification :as notification]
-            [frontend.handler.user :as user-handler]
-            [frontend.handler.ui :as ui-handler]
-            [frontend.handler.repo :as repo-handler]
-            [frontend.handler.config :as config-handler]
-            [frontend.handler.page :as page-handler]
-            [frontend.state :as state]
-            [frontend.version :refer [version]]
-            [frontend.util :as util]
             [frontend.config :as config]
-            [frontend.dicts :as dicts]
-            [clojure.string :as string]
-            [goog.object :as gobj]
             [frontend.context.i18n :as i18n]
+            [frontend.date :as date]
+            [frontend.dicts :as dicts]
+            [frontend.handler :as handler]
+            [frontend.handler.config :as config-handler]
+            [frontend.handler.notification :as notification]
+            [frontend.handler.page :as page-handler]
+            [frontend.handler.route :as route-handler]
+            [frontend.handler.ui :as ui-handler]
+            [frontend.handler.user :as user-handler]
+            [frontend.modules.instrumentation.core :as instrument]
+            [frontend.state :as state]
+            [frontend.ui :as ui]
+            [frontend.util :refer [classnames] :as util]
+            [frontend.version :refer [version]]
+            [goog.object :as gobj]
             [reitit.frontend.easy :as rfe]
-            [frontend.date :as date]))
+            [rum.core :as rum]))
 
 (rum/defcs set-email < (rum/local "" ::email)
   [state]
@@ -134,6 +136,15 @@
          :on-click close-fn}
         "Cancel"]]]]))
 
+(rum/defc outdenting-hint
+  []
+  [:div
+   [:p "See more details at " [:a {:target "_blank" :href "https://discuss.logseq.com/t/whats-your-preferred-outdent-behavior-the-direct-one-or-the-logical-one/978"} "here"] "."]
+   [:p "default(left) vs logical(right)"]
+   [:img {:src "https://discuss.logseq.com/uploads/default/original/1X/e8ea82f63a5e01f6d21b5da827927f538f3277b9.gif"
+          :width 500
+          :height 500}]])
+
 (rum/defcs settings < rum/reactive
   []
   (let [preferred-format (state/get-preferred-format)
@@ -144,6 +155,9 @@
         current-repo (state/get-current-repo)
         enable-journals? (state/enable-journals? current-repo)
         enable-encryption? (state/enable-encryption? current-repo)
+        instrument-disabled? (state/sub :instrument/disabled?)
+        logical-outdenting? (state/logical-outdenting?)
+        enable-tooltip? (state/enable-tooltip?)
         enable-git-auto-push? (state/enable-git-auto-push? current-repo)
         enable-block-time? (state/enable-block-time?)
         show-brackets? (state/show-brackets?)
@@ -153,23 +167,31 @@
         developer-mode? (state/sub [:ui/developer-mode?])
         theme (state/sub :ui/theme)
         dark? (= "dark" theme)
+        system-theme? (state/sub :ui/system-theme?)
         switch-theme (if dark? "white" "dark")]
     (rum/with-context [[t] i18n/*tongue-context*]
       [:div#settings.cp__settings-main
        [:h1.title (t :settings)]
 
        [:div.panel-wrap
-        [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
+
+        ;;; theme modes
+        [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4
          [:label.block.text-sm.font-medium.leading-5.opacity-70
           {:for "toggle_theme"}
           (t :right-side-bar/switch-theme (string/capitalize switch-theme))]
-         [:div.flex.flex-row.mt-1.sm:mt-0.sm:col-span-2
+         [:div.flex.flex-row.mt-1.sm:mt-0.sm:col-span-1
           [:div.rounded-md.sm:max-w-xs
-           (ui/toggle dark?
-                      (fn []
-                        (state/set-theme! switch-theme))
-                      true)]
-          [:span.ml-4.opacity-50.text-sm "t t"]]]
+
+           [:ul.theme-modes-options
+            [:li {:on-click (partial state/use-theme-mode! "light")
+                  :class    (classnames [{:active (and (not system-theme?) (not dark?))}])} [:i.mode-light] [:strong "light"]]
+            [:li {:on-click (partial state/use-theme-mode! "dark")
+                  :class    (classnames [{:active (and (not system-theme?) dark?)}])} [:i.mode-dark] [:strong "dark"]]
+            [:li {:on-click (partial state/use-theme-mode! "system")
+                  :class    (classnames [{:active system-theme?}])} [:i.mode-system] [:strong "system"]]]]]
+
+         [:span.ml-4.opacity-50.text-sm.px-5 "t t"]]
 
         [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
          [:label.block.text-sm.font-medium.leading-5.opacity-70
@@ -241,7 +263,12 @@
             {:on-change (fn [e]
                           (let [format (util/evalue e)]
                             (when-not (string/blank? format)
-                              (config-handler/set-config! :date-formatter format))))}
+                              (config-handler/set-config! :date-formatter format)
+                              (notification/show!
+                               [:div "You need to re-index your graph to make the change works"]
+                               :success)
+                              (state/close-modal!)
+                              (route-handler/redirect! {:to :repos}))))}
             (for [format (sort (date/journal-title-formatters))]
               [:option (cond->
                            {:key format}
@@ -270,6 +297,22 @@
                (if (= workflow :now)
                  "NOW/LATER"
                  "TODO/DOING")])]]]]
+
+        (toggle "preferred_outdenting"
+                (ui/tippy {:html (outdenting-hint)
+                           :interactive true
+                           :theme "customized"
+                           :disabled false}
+                          (t :settings-page/preferred-outdenting))
+                logical-outdenting?
+                (fn []
+                  (config-handler/toggle-logical-outdenting!)))
+
+        (toggle "enable_tooltip"
+                (t :settings-page/enable-tooltip)
+                enable-tooltip?
+                (fn []
+                  (config-handler/toggle-ui-enable-tooltip!)))
 
         (toggle "enable_timetracking"
                 (t :settings-page/enable-timetracking)
@@ -335,6 +378,27 @@
                       (config-handler/set-config! :git-auto-push value)))))]
 
        [:hr]
+
+       [:div.panel-wrap
+        [:p "Logseq will never collect your local graph database or sell your data."]
+        (toggle "usage-diagnostics"
+                (t :settings-page/disable-sentry)
+                (not instrument-disabled?)
+                (fn [] (instrument/disable-instrument
+                        (not instrument-disabled?))))]
+
+       [:hr]
+
+       [:div.panel-wrap
+
+        [:div.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-center.sm:pt-5
+         [:label.block.text-sm.font-medium.leading-5.opacity-70
+          {:for "clear_cache"}
+          (t :settings-page/clear-cache)]
+         [:div.mt-1.sm:mt-0.sm:col-span-2
+          [:div.max-w-lg.rounded-md.sm:max-w-xs
+           (ui/button (t :settings-page/clear)
+             :on-click handler/clear-cache!)]]]]
 
        [:div.panel-wrap
         [:div.it.app-updater.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start

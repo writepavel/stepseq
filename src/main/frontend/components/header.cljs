@@ -16,11 +16,11 @@
             [frontend.components.search :as search]
             [frontend.components.export :as export]
             [frontend.components.right-sidebar :as sidebar]
-            [frontend.handler.project :as project-handler]
             [frontend.handler.page :as page-handler]
             [frontend.handler.web.nfs :as nfs]
             [goog.dom :as gdom]
-            [goog.object :as gobj]))
+            [goog.object :as gobj]
+            [frontend.handler.migrate :as migrate]))
 
 (rum/defc logo < rum/reactive
   [{:keys [white?]}]
@@ -80,7 +80,7 @@
         (svg/horizontal-dots nil)])
      (->>
       [(when-not (util/mobile?)
-         {:title (t :help/toggle-right-sidebar)
+         {:title (t :shortcut.ui/toggle-right-sidebar)
           :options {:on-click state/toggle-sidebar-open?!}})
 
        (when current-repo
@@ -100,7 +100,7 @@
           :options {:href (rfe/href :all-pages)}
           :icon svg/pages-sm})
 
-       (when current-repo
+       (when (and current-repo (not config/publishing?))
          {:title (t :all-files)
           :options {:href (rfe/href :all-files)}
           :icon svg/folder-sm})
@@ -110,22 +110,9 @@
           :options {:href (rfe/href :all-journals)}
           :icon svg/calendar-sm})
 
-       (when (project-handler/get-current-project current-repo projects)
-         {:title (t :my-publishing)
-          :options {:href (rfe/href :my-publishing)}})
-
-       (when-let [project (and current-repo
-                               (project-handler/get-current-project current-repo projects))]
-         (let [link (str config/website "/" project)]
-           {:title (str (t :go-to) "/" project)
-            :options {:href link
-                      :target "_blank"}
-            :icon svg/external-link}))
-
-       (when current-repo
-         {:title (t :settings)
-          :options {:on-click #(ui-handler/toggle-settings-modal!)}
-          :icon svg/settings-sm})
+       {:title (t :settings)
+        :options {:on-click #(ui-handler/toggle-settings-modal!)}
+        :icon svg/settings-sm}
 
        (when current-repo
          {:title (t :export)
@@ -136,6 +123,13 @@
          {:title (t :import)
           :options {:href (rfe/href :import)}
           :icon svg/import-sm})
+
+       (when (and current-repo
+                  (not (:markdown/version (state/get-config))))
+         {:title "Convert to more standard Markdown"
+          :options {:on-click (fn [] (migrate/show-convert-notification! current-repo))}
+          :icon svg/import-sm})
+
        {:title [:div.flex-row.flex.justify-between.items-center
                 [:span (t :join-community)]]
         :options {:href "https://discord.gg/KpN4eHY"

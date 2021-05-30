@@ -15,9 +15,9 @@
   "If `push` is truthy, previous page will be left in history."
   [{:keys [to path-params query-params push]
     :or {push true}}]
-  (if push
-    (rfe/push-state to path-params query-params)
-    (rfe/replace-state to path-params query-params)))
+  (let [route-fn (if push rfe/push-state rfe/replace-state)]
+    (state/save-scroll-position! (util/scroll-top))
+    (route-fn to path-params query-params)))
 
 (defn redirect-to-home!
   []
@@ -55,9 +55,9 @@
               (str (subs content 0 48) "...")
               content))
           "Page no longer exists!!")
-        (let [page (db/pull [:page/name (string/lower-case name)])]
-          (or (:page/original-name page)
-              (:page/name page)
+        (let [page (db/pull [:block/name (string/lower-case name)])]
+          (or (:block/original-name page)
+              (:block/name page)
               "Logseq"))))
     :tag
     (str "#"  (:name path-params))
@@ -87,9 +87,11 @@
   (let [route route]
     (swap! state/state assoc :route-match route)
     (update-page-title! route)
-    (when-let [anchor (get-in route [:query-params :anchor])]
+    (if-let [anchor (get-in route [:query-params :anchor])]
       (jump-to-anchor! anchor)
-      (util/scroll-to-top))))
+      (util/scroll-to (util/app-scroll-container-node)
+                      (state/get-saved-scroll-position)
+                      false))))
 
 (defn go-to-search!
   [search-mode]

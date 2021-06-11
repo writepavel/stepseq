@@ -315,7 +315,7 @@
 
 (defn insert-nodes
   "Insert nodes as children(or siblings) of target-node.
-  new-nodes-tree is an vector of blocks, e.g [1 [2 3] 4 [5 [6 7]]]"
+  new-nodes-tree is a vector of blocks, e.g [1 [2 3] 4 [5 [6 7]]]"
   [new-nodes-tree target-node sibling?]
   (ds/auto-transact!
    [txs-state (ds/new-outliner-txs-state)] {:outliner-op :insert-nodes}

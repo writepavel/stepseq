@@ -32,18 +32,20 @@
             [frontend.handler.web.nfs :as nfs-handler]))
 
 (defn nav-item
-  [title href svg-d active? close-modal-fn]
+  ([title href svg-d active? close-modal-fn]
+   (nav-item title href svg-d active? close-modal-fn "0 0 24 24"))
+  ([title href svg-d active? close-modal-fn viewbox]
   [:a.mb-1.group.flex.items-center.pl-4.py-2.text-base.leading-6.font-medium.hover:text-gray-200.transition.ease-in-out.duration-150.nav-item
    {:href href
     :on-click close-modal-fn}
    [:svg.mr-4.h-6.w-6.group-hover:text-gray-200.group-focus:text-gray-200.transition.ease-in-out.duration-150
-    {:viewBox "0 0 24 24", :fill "none", :stroke "currentColor"}
+    {:viewBox viewbox, :fill "none", :stroke "currentColor"}
     [:path
      {:d svg-d
       :stroke-width "2"
       :stroke-linejoin "round"
       :stroke-linecap "round"}]]
-   title])
+   title]))
 
 (rum/defc sidebar-nav < rum/reactive
   [route-match close-modal-fn]
@@ -58,6 +60,15 @@
        (nav-item "Journals" "#/"
                  "M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10M9 21h6"
                  (active? :home)
+                 close-modal-fn)
+       (nav-item "+ Step!" "#/new-steps"
+                 "M27,28h-8.1c-1.2,0-2.3-0.5-3.2-1.3L3,14l7-8v0c0,3.9,4.1,8,8,8h1v0c-0.1,4.5,1.6,7.8,6,9.2 c0.3,0.1,0.5,0.2,0.8,0.2l0,0c1.2,0.3,2,1.6,1.7,2.8L27,28z M1,16l13.7,13.7c0.8,0.8,2,1.3,3.2,1.3H27 M28,1l-7.3,7.3C19,10,18.4,12.4,19,14.7l0,0 M10,7L10,7c1.9-0.6,3.6-2,4.6-3.7L16,1"
+                 (active? :new-steps)
+                 close-modal-fn "0 0 32 32")
+       (nav-item "Summary" "#/summary"
+                ;;  "M2,85.0094776 C2,83.347389 3.35010672,82 5,82 L18.2,82 C19.8568542,82 21.2,83.3366311 21.2,85.0094776 L21.2,98 L2,98 L2,85.0094776 Z M21,65.0074199 C21,63.3464677 22.3501067,62 24,62 L37.2,62 C38.8568542,62 40.2,63.3455393 40.2,65.0074199 L40.2,98 L21,98 L21,65.0074199 Z M40,44.9910051 C40,43.3391186 41.3501067,42 43,42 L56.2,42 C57.8568542,42 59.2,43.3427539 59.2,44.9910051 L59.2,98 L40,98 L40,44.9910051 Z M60,25.0026984 C60,23.3443539 61.3501067,22 63,22 L76.2,22 C77.8568542,22 79.2,23.3513777 79.2,25.0026984 L79.2,98 L60,98 L60,25.0026984 Z M79,5.00494794 C79,3.34536102 80.3501067,2 82,2 L95.2,2 C96.8568542,2 98.2,3.33876028 98.2,5.00494794 L98.2,98 L79,98 L79,5.00494794 Z M26.3116803,15.7771044 L31.2992615,20.7646856 C31.6740848,21.1395089 31.9796684,21.0128809 31.9802524,20.480305 L31.9994612,2.96325727 C32.0000535,2.42317816 31.5687805,1.9994166 31.0362045,2.0000006 L13.5191565,2.01920902 C12.9790774,2.01980124 12.859259,2.32468304 13.2347759,2.70019994 L18.2059145,7.67133854 L2.8405038,23.0367492 C1.719102,24.158151 1.71957859,25.9798435 2.84345836,27.1037233 L6.87929554,31.1395605 C8.00018202,32.260447 9.82402163,32.264763 10.9462696,31.142515 L26.3116803,15.7771044 L26.3116803,15.7771044 Z"
+                 "M5 3v16h16v2H3V3h2zm14.94 2.94l2.12 2.12L16 14.122l-3-3-3.94 3.94-2.12-2.122L13 6.88l3 3 3.94-3.94z"
+                 (active? :summary)
                  close-modal-fn)
        (nav-item "All Pages" "#/all-pages"
                  "M6 2h9a1 1 0 0 1 .7.3l4 4a1 1 0 0 1 .3.7v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.1.9-2 2-2zm9 2.41V7h2.59L15 4.41zM18 9h-3a2 2 0 0 1-2-2V4H6v16h12V9zm-2 7a1 1 0 0 1-1 1H9a1 1 0 0 1 0-2h6a1 1 0 0 1 1 1zm0-4a1 1 0 0 1-1 1H9a1 1 0 0 1 0-2h6a1 1 0 0 1 1 1zm-5-4a1 1 0 0 1-1 1H9a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1z"
@@ -120,7 +131,7 @@
       [:div.cp__sidebar-main-content
        {:data-is-global-graph-pages global-graph-pages?
         :data-is-full-width (or global-graph-pages?
-                                (contains? #{:all-files :all-pages :my-publishing} route-name))}
+                                (contains? #{:all-files :all-pages :new-steps :summary :my-publishing} route-name))}
        (cond
          (not indexeddb-support?)
          nil
@@ -206,9 +217,9 @@
          (and logged? (not preferred-format))
          (widgets/choose-preferred-format)
 
-         ;; TODO: delay this
-         (and logged? (nil? (:email me)))
-         (settings/set-email)
+        ;;  ;; TODO: delay this
+        ;;  (and logged? (nil? (:email me)))
+        ;;  (settings/set-email)
 
          cloning?
          (ui/loading (t :cloning))

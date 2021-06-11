@@ -484,3 +484,48 @@
                       page]]
                 [:td [:span.text-gray-500.text-sm
                       (t :file/no-data)]]])]]))])))
+
+(rum/defc summary < rum/reactive
+  ;; {:did-mount (fn [state]
+  ;;               (let [current-repo (state/sub :git/current-repo)]
+  ;;                 (js/setTimeout #(db/remove-orphaned-pages! current-repo) 0))
+  ;;               state)}
+  []
+  (let [current-repo (state/sub :git/current-repo)]
+    (rum/with-context [[t] i18n/*tongue-context*]
+      [:div.flex-1
+       [:h1.title (t :summary)]
+       ])))
+
+(rum/defc new-steps < rum/reactive
+  ;; {:did-mount (fn [state]
+  ;;               (let [current-repo (state/sub :git/current-repo)]
+  ;;                 (js/setTimeout #(db/remove-orphaned-pages! current-repo) 0))
+  ;;               state)}
+  []
+  (let [current-repo (state/sub :git/current-repo)]
+    (rum/with-context [[t] i18n/*tongue-context*]
+      [:div.flex-1
+       [:h1.title (t :new-steps)]
+      ;;  [:p (str "Press button to make a new step")]
+       (when current-repo
+         (let [step-forms (editor-handler/get-all-step-templates)]
+
+           [:table.table-auto
+            ;; [:thead
+            ;;  [:tr [:th "Name"] [:th "Questions Block Id"] [:th "Page Title"]]]
+            [:tbody
+
+(for [step step-forms]
+  (let [step-name (key step)
+        step-block-id (val step)]
+    [:tr {:key step-block-id}
+     [:td (ui/button step-name
+                     :on-click (fn []
+                                ;;  (page-handler/handle-focus-new-journal-line! (str step-name " <% today %> <% time %> "))
+                                ;;  (println " (page-handler/handle-focus-new-step! :step-template step-block-id) ")
+                                   (page-handler/handle-focus-new-step! :step-template step-block-id)
+                                 ))]
+    ;;  [:td step-block-id]
+     ])
+  )]]))])))

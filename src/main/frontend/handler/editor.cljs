@@ -44,6 +44,8 @@
             [frontend.handler.repeated :as repeated]
             [frontend.template :as template]
             [clojure.core.async :as async]
+            [debux.cs.core :as dbx :refer-macros [clog clogn dbg dbgn break
+                                                  clog_ clogn_ dbg_ dbgn_ break_]]
             [lambdaisland.glogi :as log]
             [cljs.core.match :refer-macros [match]]
             [frontend.modules.outliner.core :as outliner-core]
@@ -537,6 +539,7 @@
   (state/set-editor-show-page-search! false)
   (state/set-editor-show-block-search! false)
   (state/set-editor-show-template-search! false)
+  (state/set-editor-show-step-template-search! false)
   (commands/restore-state true))
 
 (defn get-state
@@ -925,13 +928,17 @@
                        first)]
     (exit-editing-and-set-selected-blocks! [block])))
 
+(defn get-all-blocks-by-input-id [input-id]
+  (let [input (gdom/getElement input-id)
+        blocks-container (util/rec-get-blocks-container input)
+        blocks (dom/by-class blocks-container "ls-block")]
+    blocks))
+
 (defn select-all-blocks!
-  []
-  (when-let [current-input-id (state/get-edit-input-id)]
-    (let [input (gdom/getElement current-input-id)
-          blocks-container (util/rec-get-blocks-container input)
-          blocks (dom/by-class blocks-container "ls-block")]
-      (exit-editing-and-set-selected-blocks! blocks))))
+      []
+      (when-let [current-input-id (state/get-edit-input-id)]
+                (let [blocks (get-all-blocks-by-input-id current-input-id)]
+                     (exit-editing-and-set-selected-blocks! blocks))))
 
 (defn- get-selected-blocks-with-children
   []
@@ -1571,6 +1578,17 @@
   [q]
   (search/template-search q))
 
+(defn get-matched-step-templates
+  [q]
+  (search/step-template-search q))
+
+(defn get-all-step-templates
+  []
+  (let [templates (db/get-all-step-templates)]
+    (when (seq templates)
+      (let [result (keys templates)]
+        (vec (select-keys templates result))))))
+
 (defn get-matched-commands
   [input]
   (try
@@ -1618,6 +1636,7 @@
       (state/get-editor-show-page-search?)
       (state/get-editor-show-block-search?)
       (state/get-editor-show-template-search?)
+      (state/get-editor-show-step-template-search?)
       (state/get-editor-show-date-picker?)))
 
 (defn get-previous-input-char
@@ -1928,13 +1947,19 @@
                    [left-block true false])
             editing-block))))
 
-(defn- paste-block-tree-at-point-edit-aux
+(defn get-block-tree-insert-pos-after-block
+  [last-block]
+  "return [target-block sibling? delete-editing-block? editing-block]"
+[last-block true false last-block])
+
+(defn- block-edit-fn-aux
   [uuid file page exclude-properties format content-update-fn]
   (fn [block]
+    (clogn ["block-edit-fn-aux" uuid file page exclude-properties format content-update-fn block])
     (outliner-core/block
      (let [[new-content new-title]
            (if content-update-fn
-             (let [new-content (content-update-fn (:block/content block))
+             (let [new-content (content-update-fn (:block/content block) block)
                    new-title (or (->> (mldoc/->edn
                                        (str (case format
                                               :markdown "- "
@@ -1974,65 +1999,301 @@
          (assoc m :block/file (select-keys file [:db/id]))
          m)))))
 
-(defn- paste-block-tree-at-point
-  ([tree exclude-properties] (paste-block-tree-at-point tree exclude-properties nil))
-  ([tree exclude-properties content-update-fn]
-   (let [repo (state/get-current-repo)
-         page (:block/page (db/entity (:db/id (state/get-edit-block))))
-         file (:block/file page)]
+(comment
+  (def data [1
+             [2 3 4]
+             [[5 6]
+              [7 8]
+              [[9 10 11]]]
+             12])
+
+  (-> (zip/vector-zip data)
+      (zip/next)
+      (zip/next)
+      (zip/down)
+      (zip/insert-right [222])
+      (zip/next)
+      (zip/next)
+      (zip/next)
+      ;; (zip/root)
+      (zip/node)))
+
+(defn replace-first-line
+  [f s]
+(let [lines (vec (string/split-lines s))
+      with-replaced (assoc lines 0 (f (first lines)))]
+  (string/join "\n" with-replaced)))
+
+(defn update-tree-metadata
+  [tree format exclude-properties page file new-block-uuids content-update-fn]
+  (clogn "update-tree-metadata")
+(zip/root
+ (loop [loc (zip/vector-zip tree)]
+   (if (zip/end? loc)
+     loc
+     (if (zip/branch? loc)
+       (recur (zip/next loc))
+       (let [uuid (random-uuid)]
+         (swap! new-block-uuids (fn [acc uuid] (conj acc uuid)) uuid)
+         (recur (zip/next (zip/edit
+                           loc
+                           (block-edit-fn-aux
+                            uuid file page exclude-properties format content-update-fn))))))))))
+
+(defn update-tree-to-step-outline
+  [tree format exclude-properties page file new-block-uuids content-update-fn]
+  (clogn "update-tree-to-step-outline")
+  (zip/root
+   (loop [loc (zip/vector-zip tree)]
+     (if (zip/end? loc)
+       loc
+       (if (zip/branch? loc)
+         (recur (zip/next loc))
+         (let [new-uuid (random-uuid)]
+           (swap! new-block-uuids (fn [acc new-uuid] (conj acc new-uuid)) new-uuid)
+           (recur
+            (zip/next
+             (let [block (zip/node loc)
+                   root-block (first tree)
+                   is-question? (= (:db/id root-block)
+                                   (get-in block [:block/parent :db/id]))
+                   block-id {:db/id (:db/id block)}
+                   empty-block-uuid (random-uuid)
+                   empty-block {:block/uuid empty-block-uuid
+                                :block/left block-id
+                                :block/parent block-id
+                                :block/page (select-keys page [:db/id])
+                                :block/title []
+                                :block/content " answer "
+                                :block/format format
+                                :block/file (:block/file page)
+                                :block/pre-block? false}
+                   updated-loc (zip/edit loc (block-edit-fn-aux
+                                              new-uuid file page exclude-properties format content-update-fn))]
+              ;;  (when is-question? (swap! new-block-uuids (fn [acc empty-block-uuid] (conj acc empty-block-uuid)) empty-block-uuid))
+               (if is-question?
+                ;;  updated-loc
+                ;;  (do
+                   (zip/insert-right updated-loc [(outliner-core/block empty-block)])
+                  ;;  (zip/edit 
+                  ;; (zip/insert-right updated-loc [(outliner-core/block empty-block)])
+                  ;; ;; (block-edit-fn-aux empty-block-uuid file page exclude-properties format content-update-fn))
+                  ;;   (block-edit-fn-aux empty-block-uuid file page exclude-properties format 
+                  ;;                      (fn [content block] (str (content " :"))))))
+                 updated-loc))))))))))
+
+(defn update-content-for-step-outline-fn [properties-to-remove format root-block]
+(let [step-template-picture (get-in root-block [:block/properties :step-picture])]
+ (fn [content block]
+  (let [is-root-block? (= block root-block)
+        is-question? (= (:db/id root-block)
+                        (get-in block [:block/parent :db/id]))
+        is-place-for-answer? (let [parent-id (get-in block [:block/parent :db/id])
+                                   parent (db/pull parent-id)]
+                               (= (:db/id root-block)
+                                  (get-in parent [:block/parent :db/id])))
+        cleared-content (reduce #(property/remove-property format %2 %1) content properties-to-remove)
+        updated-content (cond is-root-block?
+                              (replace-first-line #(str "[[" step-template-picture " " % "]] <% time %>. ") cleared-content)
+                              is-question?
+                              (let [content (replace-first-line #(str "((" (:block/uuid block) "))") cleared-content)]
+                                (property/insert-property format content "step-question" "true"))
+                              is-place-for-answer?
+                              (str "Answer. " cleared-content)
+                              :else (str "Other. " cleared-content))]
+    (-> updated-content
+        template/resolve-dynamic-template!)))))
+
+(defn update-content-for-template-fn [properties-to-remove format]
+(fn [content _]
+                               (let [cleared-content (reduce #(property/remove-property format %2 %1) content properties-to-remove)]
+                                 (-> cleared-content
+                                     template/resolve-dynamic-template!)))
+)        
+
+(comment 
+;;   when add new uuid to atom without zip/insert-right
+;;  message=Uncaught Error: Assert failed: The id should match block-id?: nil (block-id? id) source=file:///static/js/cljs-runtime/module$node_modules$$sentry$browser$dist$helpers.js lineno=2 colno=209 error=Error: Assert failed: The id should match block-id?: nil (block-id? id)
+ 
+;; when add new uuid to atom and with zip/insert-right
+;;  "Nothing found for entity id [:block/uuid #uuid " dcff1aa7-ff7f-479c-b90c-0bafcc583404 "]"
+  
+
+  )
+
+(comment
+  (defn update-tree-to-step-outline
+    [tree format exclude-properties page file new-block-uuids content-update-fn]
+    (zip/root
+     (loop [loc (zip/vector-zip tree)]
+       (if (zip/end? loc)
+         loc
+         (if (zip/branch? loc)
+           (recur (zip/next loc))
+           (let [new-uuid (random-uuid)]
+             (swap! new-block-uuids (fn [acc new-uuid] (conj acc new-uuid)) new-uuid)
+             (recur
+              (zip/next
+               (let [block (zip/node loc)
+                     root-block (first tree)
+                     is-question? (= (:db/id root-block)
+                                     (get-in block [:block/parent :db/id]))
+                     block-id {:db/id (:db/id block)}
+                     empty-block-uuid (random-uuid)
+                     empty-block {:block/uuid empty-block-uuid
+                                  :block/left block-id
+                                  :block/parent block-id
+                                  :block/page (select-keys page [:db/id])
+                                  :block/title []
+                                  :block/content ""
+                                  :block/format format
+                                  :block/file (:block/file page)
+                                  :block/pre-block? true}
+                     updated-loc (zip/edit loc (block-edit-fn-aux
+                                                new-uuid file page exclude-properties format content-update-fn))]
+                 (if is-question?
+                   (zip/insert-right updated-loc [(outliner-core/block empty-block)])
+                ;;  (do
+                ;;   ;;  (swap! new-block-uuids (fn [acc empty-block-uuid] (conj acc empty-block-uuid)) empty-block-uuid)
+                ;;    (let [updated-loc (zip/insert-right updated-loc [(outliner-core/block empty-block)])]
+                ;;     ;;  (swap! new-block-uuids (fn [acc empty-block-uuid] (conj acc empty-block-uuid)) empty-block-uuid)
+                ;;      updated-loc))
+                   updated-loc)))))))))))
+
+;; (defn- paste-block-tree-at-point-v0
+;;   ([tree exclude-properties] (paste-block-tree-at-point-v0 tree exclude-properties update-tree-metadata nil))
+;;   ([tree exclude-properties tree-update-fn] (paste-block-tree-at-point-v0 tree exclude-properties tree-update-fn nil))
+;;   ([tree exclude-properties tree-update-fn content-update-fn]
+;;    (let [repo (state/get-current-repo)
+;;          page (:block/page (db/entity (:db/id (state/get-edit-block))))
+;;          file (:block/file page)]
+;;      (when-let [[target-block sibling? delete-editing-block? editing-block]
+;;                 (get-block-tree-insert-pos-at-point)]
+;;        (let [target-block (outliner-core/block target-block)
+;;              editing-block (outliner-core/block editing-block)
+;;              format (or (:block/format target-block) (state/get-preferred-format))
+;;              new-block-uuids (atom #{})
+;;              updated-block-tree (tree-update-fn tree format exclude-properties page file new-block-uuids content-update-fn)             
+;;              _ (outliner-core/save-node editing-block)
+;;              _ (outliner-core/insert-nodes updated-block-tree target-block sibling?)
+;;              _ (when delete-editing-block?
+;;                  (when-let [id (:db/id (outliner-core/get-data editing-block))]
+;;                    (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))
+;;              new-blocks (db/pull-many repo '[*] (map (fn [id] [:block/uuid id]) @new-block-uuids))]
+;;          (db/refresh! repo {:key :block/insert :data new-blocks}))))))
+
+(defn- append-block-tree-at-point
+  [tree new-block-uuids]
+   (let [repo (state/get-current-repo)]
      (when-let [[target-block sibling? delete-editing-block? editing-block]
                 (get-block-tree-insert-pos-at-point)]
        (let [target-block (outliner-core/block target-block)
-             editing-block (outliner-core/block editing-block)
-             format (or (:block/format target-block) (state/get-preferred-format))
-             new-block-uuids (atom #{})
-             metadata-replaced-blocks
-             (zip/root
-              (loop [loc (zip/vector-zip tree)]
-                (if (zip/end? loc)
-                  loc
-                  (if (vector? (zip/node loc))
-                    (recur (zip/next loc))
-                    (let [uuid (random-uuid)]
-                      (swap! new-block-uuids (fn [acc uuid] (conj acc uuid)) uuid)
-                      (recur (zip/next (zip/edit
-                                        loc
-                                        (paste-block-tree-at-point-edit-aux
-                                         uuid file page exclude-properties format content-update-fn)))))))))
+             editing-block (outliner-core/block editing-block)             
              _ (outliner-core/save-node editing-block)
-             _ (outliner-core/insert-nodes metadata-replaced-blocks target-block sibling?)
+             _ (outliner-core/insert-nodes tree target-block sibling?)
              _ (when delete-editing-block?
                  (when-let [id (:db/id (outliner-core/get-data editing-block))]
                    (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))
              new-blocks (db/pull-many repo '[*] (map (fn [id] [:block/uuid id]) @new-block-uuids))]
-         (db/refresh! repo {:key :block/insert :data new-blocks}))))))
+         (db/refresh! repo {:key :block/insert :data new-blocks})))))
+
+ ;; TODO merge common logic with append-block-tree-at-point and paste-block-tree-after-block
+ (defn- paste-block-tree-after-block
+  [tree new-block-uuids last-block]
+   (let [repo (state/get-current-repo)]
+     (when-let [[target-block sibling? delete-editing-block? editing-block]
+                (get-block-tree-insert-pos-after-block last-block)]
+       (let [target-block (outliner-core/block target-block)
+             editing-block (outliner-core/block editing-block)
+             _ (outliner-core/save-node editing-block)
+             _ (outliner-core/insert-nodes tree target-block sibling?)
+             _ (when delete-editing-block?
+                 (when-let [id (:db/id (outliner-core/get-data editing-block))]
+                   (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))
+             new-blocks (db/pull-many repo '[*] (map (fn [id] [:block/uuid id]) @new-block-uuids))]
+         (db/refresh! repo {:key :block/insert :data new-blocks})))))
+
+(defn copy-paste-tree-at-point
+  [tree]
+  (let [page (:block/page (db/entity (:db/id (state/get-edit-block))))
+        file (:block/file page)
+        format (state/get-preferred-format)
+        new-block-uuids (atom #{})
+        tree-update-fn update-tree-metadata
+        content-update-fn (update-content-for-template-fn [] format)
+        updated-tree (tree-update-fn tree format [] page file new-block-uuids content-update-fn)]
+    (append-block-tree-at-point updated-tree new-block-uuids)))                                     
+
+(defn put-template-content-at-point
+  [template-tree exclude-properties format properties-to-remove]
+  (let [page (:block/page (db/entity (:db/id (state/get-edit-block))))
+        file (:block/file page)
+        new-block-uuids (atom #{})
+        tree-update-fn update-tree-metadata
+        content-update-fn (update-content-for-template-fn properties-to-remove format)
+        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
+    (append-block-tree-at-point updated-tree new-block-uuids)))                                     
+
+(defn put-step-template-content-at-point
+  [template-tree exclude-properties format properties-to-remove]
+  (let [page (:block/page (db/entity (:db/id (state/get-edit-block))))
+        file (:block/file page)
+        new-block-uuids (atom #{})
+        tree-update-fn update-tree-to-step-outline
+        content-update-fn (update-content-for-step-outline-fn properties-to-remove format (first template-tree))
+        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
+    (append-block-tree-at-point updated-tree new-block-uuids)))
+
+(defn put-step-template-content-after-block
+  [last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn]
+  (clogn [last-block template-tree exclude-properties format properties-to-remove])
+  (let [page (:block/page last-block)
+        file (:block/file page)
+        new-block-uuids (atom #{})
+        tree-update-fn update-tree-to-step-outline
+        content-update-fn (update-content-for-step-outline-fn properties-to-remove format (first template-tree))
+        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
+    (paste-block-tree-after-block updated-tree new-block-uuids last-block)
+        (when on-block-inserted-fn
+      (on-block-inserted-fn updated-tree)
+        ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
+      )
+    ))
 
 (defn template-on-chosen-handler
-  [_input id _q format _edit-block _edit-content]
-  (fn [[_template db-id] _click?]
-    (let [repo (state/get-current-repo)
-          block (db/entity db-id)
-          block-uuid (:block/uuid block)
-          including-parent? (not (false? (:including-parent (:block/properties block))))
-          blocks (if including-parent? (db/get-block-and-children repo block-uuid) (db/get-block-children repo block-uuid))
-          level-blocks (vals (blocks-with-level blocks))
-          grouped-blocks (group-by #(= db-id (:db/id %)) level-blocks)
-          root-block (or (first (get grouped-blocks true)) (assoc (db/pull db-id) :level 1))
-          blocks-exclude-root (get grouped-blocks false)
-          sorted-blocks (tree/sort-blocks blocks-exclude-root root-block)
-          result-blocks (if including-parent? sorted-blocks (drop 1 sorted-blocks))
-          tree (blocks-vec->tree result-blocks)]
-      (insert-command! id "" format {})
-      (paste-block-tree-at-point tree [:template :including-parent]
-                                 (fn [content]
-                                   (->> content
-                                        (property/remove-property format "template")
-                                        (property/remove-property format "including-parent")
-                                        template/resolve-dynamic-template!)))
-      (clear-when-saved!)
-      (db/refresh! repo {:key :block/insert :data [(db/pull db-id)]}))
-    (when-let [input (gdom/getElement id)]
-      (.focus input))))
+  [template-type _input id _q format _edit-block _edit-content]
+      (fn [[_template-name template-db-id] _click?]
+        ;; TODO just invoke handle-generate-template
+        (let [repo (state/get-current-repo)
+              block (db/entity template-db-id)
+              block-uuid (:block/uuid block)
+              including-parent? (not (false? (:including-parent (:block/properties block))))
+              blocks (if including-parent? (db/get-block-and-children repo block-uuid) (db/get-block-children repo block-uuid))
+              level-blocks (vals (blocks-with-level blocks))
+              grouped-blocks (group-by #(= template-db-id (:db/id %)) level-blocks)
+              root-block (or (first (get grouped-blocks true)) (assoc (db/pull template-db-id) :level 1))
+              blocks-exclude-root (get grouped-blocks false)
+              sorted-blocks (tree/sort-blocks blocks-exclude-root root-block)
+              result-blocks (if including-parent? sorted-blocks (drop 1 sorted-blocks))
+              template-tree (blocks-vec->tree result-blocks)
+              template-property (case template-type
+                                  :general-template :template
+                                  :step-template :step-form)
+              properties-to-remove (case template-type
+                                     :general-template [:template :including-parent]
+                                     :step-template [:step-form :including-parent :step-picture :reward-for-answer :first-answer-to-title])
+              properties-to-hide properties-to-remove]
+
+                  (insert-command! id "" format {})
+
+                   (case template-type 
+                     :general-template (put-template-content-at-point template-tree (into [template-property] properties-to-hide) format properties-to-remove)
+                     :step-template (put-step-template-content-at-point template-tree (into [template-property] properties-to-hide) format properties-to-remove))
+
+                  (clear-when-saved!)
+                  (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]}))
+        (when-let [input (gdom/getElement id)]
+          (.focus input))))
 
 (defn parent-is-page?
   [{{:block/keys [parent page]} :data :as node}]
@@ -2532,7 +2793,7 @@
         tree* (->> tree
                    (mapv #(assoc % :level (- (:block/level %) prefix-level)))
                    (blocks-vec->tree))]
-    (paste-block-tree-at-point tree* [])))
+    (copy-paste-tree-at-point tree*)))
 
 (defn- paste-segmented-text
   [format text]
@@ -2563,7 +2824,7 @@
          (= (string/trim text) (string/trim (:copy/content copied-blocks))))
       (do
         ;; copy from logseq internally
-        (paste-block-tree-at-point copied-block-tree [])
+        (copy-paste-tree-at-point copied-block-tree)
         (util/stop e))
 
       (do

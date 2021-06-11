@@ -504,6 +504,12 @@
 (defn get-editor-show-template-search?
   []
   (get @state :editor/show-template-search?))
+(defn set-editor-show-step-template-search!
+  [value]
+  (set-state! :editor/show-step-template-search? value))
+(defn get-editor-show-step-template-search?
+  []
+  (get @state :editor/show-step-template-search?))
 (defn set-editor-show-date-picker!
   [value]
   (set-state! :editor/show-date-picker? value))

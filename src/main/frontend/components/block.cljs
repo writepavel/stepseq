@@ -1275,10 +1275,13 @@
                           (and (get properties :heading)
                                (<= level 6)
                                level))
-        elem (if heading-level
-               (keyword (str "h" heading-level
-                             (when block-ref? ".inline")))
-               :span.inline)]
+        step-question? (or (get properties :step-question) false)
+        elem (cond heading-level  ;; TODO Add step-question markup
+                   (keyword (str "h" heading-level
+                                 (when block-ref? ".inline")))
+                   step-question? :sub.inline
+                   :else :span.inline)]
+               (println (str "elem title = " title " step-question = " step-question? " props = " properties))
     (->elem
      elem
      (merge
@@ -1287,12 +1290,14 @@
                  (not (string/blank? marker))
                  (not= "nil" marker))
         {:class (str (string/lower-case marker))})
-      (when bg-color
-        {:style {:background-color bg-color
-                 :padding-left 6
-                 :padding-right 6
-                 :color "#FFFFFF"}
-         :class "with-bg-color"}))
+      (cond bg-color
+            {:style {:background-color bg-color
+                     :padding-left 6
+                     :padding-right 6
+                     :color "#FFFFFF"}
+             :class "with-bg-color"}
+            step-question?
+            {:style {:color "steelblue"}}))
      (remove-nils
       (concat
        [(when-not slide? checkbox)

@@ -38,6 +38,10 @@
     "All files"
     :all-pages
     "All pages"
+    :new-steps
+    "New steps"
+    :summary
+    "Summary"
     :all-journals
     "All journals"
     :file
@@ -117,6 +121,13 @@
                       :file/path)]
     (redirect! {:to :file
                 :path-params {:path path}})))
+
+(defn focus-on-block!
+  [block-uuid]
+  (println (str "focus-on-block! uuid = " block-uuid))
+  (when block-uuid
+    (redirect! {:to :page
+                :path-params {:name (str block-uuid)}})))                
 
 (defn toggle-between-page-and-file!
   [_e]

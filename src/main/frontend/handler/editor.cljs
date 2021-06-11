@@ -618,26 +618,31 @@
    (state/set-editor-op! nil)))
 
 (defn api-insert-new-block!
-  [content {:keys [page block-uuid sibling? attributes]}]
-  (when (or page block-uuid)
-    (when-let [block (if block-uuid
-                       (db/pull [:block/uuid block-uuid])
+  ([content {:keys [page last-block-uuid sibling? attributes] :as opts}]
+  (api-insert-new-block! content opts nil))
+  ([content {:keys [page last-block-uuid sibling? attributes]} on-block-inserted-fn]
+  (when (or page last-block-uuid)
+    (when-let [last-block (if last-block-uuid
+                       (db/pull [:block/uuid last-block-uuid])
                        (let [page (db/entity [:block/name (string/lower-case page)])
-                             block-uuid (:block/uuid page)
                              children (:block/_parent page)
                              blocks (db/sort-by-left children page)
                              last-block-id (or (:db/id (last blocks))
                                                (:db/id page))]
                          (db/pull last-block-id)))]
       ;; TODO: DRY
-      (let [new-block (-> (select-keys block [:block/parent :block/left :block/format
+      (let [new-block (clogn(-> (select-keys last-block [:block/parent :block/left :block/format
                                               :block/page :block/file :block/journal?])
                           (assoc :block/content content)
-                          (wrap-parse-block))
+                          (wrap-parse-block)))
             repo (state/get-current-repo)]
-        (outliner-insert-block! {} block new-block sibling?)
+        (outliner-insert-block! {} last-block new-block sibling?)
         (db/refresh! repo {:key :block/insert
-                           :data [new-block]})))))
+                           :data [new-block]})
+        (when on-block-inserted-fn
+        (on-block-inserted-fn new-block)
+        ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
+              ))))))
 
 (defn update-timestamps-content!
   [{:block/keys [repeated? marker format] :as block} content]
@@ -2294,6 +2299,108 @@
                   (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]}))
         (when-let [input (gdom/getElement id)]
           (.focus input))))
+
+(defn template-on-chosen-after-block-handler
+  [template-type _template-name template-db-id last-block on-block-inserted-fn]
+  (let [repo (state/get-current-repo)
+        block (db/entity template-db-id)
+        block-uuid (:block/uuid block)
+        including-parent? (not (false? (:including-parent (:block/properties block))))
+        blocks (if including-parent? (db/get-block-and-children repo block-uuid) (db/get-block-children repo block-uuid))
+        level-blocks (vals (blocks-with-level blocks))
+        grouped-blocks (group-by #(= template-db-id (:db/id %)) level-blocks)
+        root-block (or (first (get grouped-blocks true)) (assoc (db/pull template-db-id) :level 1))
+        blocks-exclude-root (get grouped-blocks false)
+        sorted-blocks (tree/sort-blocks blocks-exclude-root root-block)
+        result-blocks (if including-parent? sorted-blocks (drop 1 sorted-blocks))
+        template-tree (blocks-vec->tree result-blocks)
+        template-property (case template-type
+                            :general-template :template
+                            :step-template :step-form)
+        properties-to-remove (case template-type
+                               :general-template [:template :including-parent]
+                               :step-template [:step-form :including-parent :step-picture :reward-for-answer :first-answer-to-title])
+        properties-to-hide properties-to-remove]
+
+    ;; (insert-command! id "" format {})
+;; TODO Split into generate tree and insert tree
+    (case template-type
+      :general-template (println "General template buttons not supported.")
+      :step-template (put-step-template-content-after-block last-block template-tree (into [template-property] properties-to-hide) (:block/format last-block) properties-to-remove on-block-inserted-fn))
+
+    (clear-when-saved!)
+    (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]})
+        
+    ;; (when on-block-inserted-fn
+    ;;   (on-block-inserted-fn new-block-tree)
+    ;;     ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
+    ;;   )
+    
+    ))
+
+;; TODO consider removing this function at all just use template-on-chosen-after-block-handler instead
+(defn outliner-insert-step-template-block-tree!
+  [config last-block template-type step-block-id sibling? on-block-inserted-fn]
+  (clogn "outliner-insert-step-template-block-tree!")
+  (let [ref-top-block? (and (:ref? config)
+                            (not (:ref-child? config)))
+        last-node (outliner-core/block last-block)
+        has-children? (db/has-children? (state/get-current-repo)
+                                        (tree/-get-id last-node))
+        sibling? (cond
+                   ref-top-block?
+                   false
+
+                   (boolean? sibling?)
+                   sibling?
+
+                   (:collapsed (:block/properties last-block))
+                   true
+
+                   :else
+                   (not has-children?))]
+    (template-on-chosen-after-block-handler template-type nil step-block-id last-block on-block-inserted-fn)
+    ;; (let [*blocks (atom [current-node])]
+    ;;   (outliner-core/save-node current-node)
+
+    ;;   put-step-template-content-after-block
+    ;;   (outliner-core/insert-node new-node current-node sibling? {:blocks-atom *blocks
+    ;;                                                              :skip-transact? false})
+    ;;   {:blocks @*blocks
+    ;;    :sibling? sibling?})
+    
+    ))
+
+(defn api-insert-new-step-block-tree!
+  [template-type step-block-id {:keys [page last-block-uuid sibling? attributes]} on-block-inserted-fn]
+  (when (or page last-block-uuid)
+    (when-let [last-block (if last-block-uuid
+                            (db/pull [:block/uuid last-block-uuid])
+                            (let [page (db/entity [:block/name (string/lower-case page)])
+                                  children (:block/_parent page)
+                                  blocks (db/sort-by-left children page)
+                                  last-block-id (or (:db/id (last blocks))
+                                                    (:db/id page))]
+                              (db/pull last-block-id)))]
+
+      (clogn ["api-insert-new-step-block-tree!" template-type step-block-id page last-block-uuid sibling? last-block])
+
+      (outliner-insert-step-template-block-tree! {} last-block template-type step-block-id sibling? on-block-inserted-fn)
+
+      ;; ;; TODO: DRY
+      ;;  (let [new-block-tree (clogn (-> (select-keys last-block [:block/parent :block/left :block/format
+      ;;                                                           :block/page :block/file :block/journal?])
+      ;;                             ;; (assoc :block/content content)
+      ;;                                  (wrap-parse-block)))
+      ;;        repo (state/get-current-repo)]
+      ;;    (outliner-insert-step-template-block-tree! {} last-block template-type step-block-id sibling? on-block-inserted-fn)
+      ;;   ;;  (db/refresh! repo {:key :block/insert
+      ;;   ;;                     :data [new-block-tree]})
+      ;;    (when on-block-inserted-fn
+      ;;      (on-block-inserted-fn new-block-tree)
+      ;;   ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
+      ;;      )
+      )))
 
 (defn parent-is-page?
   [{{:block/keys [parent page]} :data :as node}]

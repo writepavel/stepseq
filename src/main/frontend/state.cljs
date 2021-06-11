@@ -52,7 +52,7 @@
     ;; right sidebar
     :ui/settings-open? false
     :ui/sidebar-open? false
-    :ui/left-sidebar-open? false
+    :ui/left-sidebar-open? true
     :ui/theme (or (storage/get :ui/theme) "dark")
     :ui/system-theme? ((fnil identity (or util/mac? util/win32? false)) (storage/get :ui/system-theme?))
     :ui/wide-mode? false
@@ -657,6 +657,10 @@
   []
   (swap! state update :ui/sidebar-open? not))
 
+(defn toggle-left-sidebar-open?!
+  []
+  (swap! state update :ui/left-sidebar-open? not))
+
 (defn open-right-sidebar!
   []
   (swap! state assoc :ui/sidebar-open? true))
@@ -1061,6 +1065,12 @@
    (get-git-auto-push? (get-current-repo)))
   ([repo]
    (true? (:git-auto-push (get-config repo)))))
+
+(defn get-vault-auto-push?
+  ([]
+   (get-vault-auto-push? (get-current-repo)))
+  ([repo]
+   (true? (:vault-auto-push (get-config repo)))))
 
 (defn set-changed-files!
   [repo changed-files]

@@ -100,6 +100,16 @@
           :options {:href (rfe/href :all-pages)}
           :icon svg/pages-sm})
 
+       (when current-repo
+         {:title (t :new-steps)
+          :options {:href (rfe/href :new-steps)}
+          :icon svg/pages-sm})
+
+       (when current-repo
+         {:title (t :summary)
+          :options {:href (rfe/href :summary)}
+          :icon svg/pages-sm})
+
        (when (and current-repo (not config/publishing?))
          {:title (t :all-files)
           :options {:href (rfe/href :all-files)}
@@ -161,7 +171,7 @@
                                (js/window.apis.toggleMaxOrMinActiveWindow))))}
        (left-menu-button {:on-click (fn []
                                       (open-fn)
-                                      (state/set-left-sidebar-open! true))})
+                                      (state/toggle-left-sidebar-open?!))})
 
        (logo {:white? white?})
 

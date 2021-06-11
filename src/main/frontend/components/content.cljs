@@ -70,12 +70,21 @@
 
 (defonce *including-parent? (atom nil))
 
+(defonce *first-answer-as-step-title? (atom nil))
+
 (rum/defc template-checkbox
   [including-parent?]
   [:div.flex.flex-row
    [:span.text-medium.mr-2 "Including the parent block in the template?"]
    (ui/toggle including-parent?
               #(swap! *including-parent? not))])
+
+(rum/defc checkbox-first-answer-as-step-title
+  [first-answer-as-step-title?]
+  [:div.flex.flex-row
+   [:span.text-medium.mr-2 "Use answer to first question as step title?"]
+   (ui/toggle first-answer-as-step-title?
+              #(swap! *first-answer-as-step-title? not))])
 
 (rum/defcs block-template < rum/reactive
   (rum/local false ::edit?)
@@ -124,6 +133,78 @@
                     (reset! edit? true))}
        "Make template"))))
 
+(rum/defcs block-step-template < rum/reactive
+  (rum/local false ::edit?)
+  (rum/local "" ::step-name)
+  (rum/local "0.1" ::reward-for-answer)
+  (rum/local "➕" ::step-icon)
+  {:will-unmount (fn [state]
+                   (reset! *including-parent? nil)
+                   (reset! *first-answer-as-step-title? nil)
+                   state)}
+  [state block-id]
+  (let [edit? (get state ::edit?)
+        step-name (get state ::step-name)
+        reward-for-answer (get state ::reward-for-answer)
+        step-icon (get state ::step-icon)
+        including-parent? (rum/react *including-parent?)
+        first-answer-as-step-title? (rum/react *first-answer-as-step-title?)
+        block-id (if (string? block-id) (uuid block-id) block-id)
+        block (db/entity [:block/uuid block-id])
+        has-children? (seq (:block/children block))]
+    (when (and (nil? including-parent?) has-children?)
+      (reset! *including-parent? true))
+
+    (if @edit?
+      (do
+        (state/clear-edit!)
+        [:div.px-4.py-2 {:on-click (fn [e] (util/stop e))}
+         [:p "What's the step's name?"]
+         [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
+          {:auto-focus true
+           :on-change (fn [e]
+                        (reset! step-name (util/evalue e)))}]
+         [:p "Step Icon. Copy from " [:a {:href "https://www.emojipedia.org" :target "_blank"} "emojipedia.org"]]
+         ;; <a href= "https://www.thesitewizard.com/" target= "_blank" >thesitewizard.com</a>
+         [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
+          {:value @step-icon
+           :on-change (fn [e]
+                        (reset! step-icon (util/evalue e)))}]
+        ;;  (checkbox-first-answer-as-step-title first-answer-as-step-title?)
+        ;;  [:p "Reward for each answer:"]
+        ;;  [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
+        ;;   {:value @reward-for-answer
+        ;;    :on-change (fn [e]
+        ;;                 (reset! reward-for-answer (util/evalue e)))}]
+        ;;  (when has-children?
+        ;;    (template-checkbox including-parent?))
+         (ui/button "Submit"
+                    :on-click (fn []
+                                (let [title (string/trim @step-name)
+                                      reward-value 0.1
+                                      ;; (js/parseFloat (.replace (string/trim @reward-for-answer) "," "."))
+                                      step-picture (string/trim @step-icon)]
+                                  (when (not (string/blank? title))
+                                    (if (page-handler/step-template-exists? title)
+                                      (notification/show!
+                                       [:p "Step form already exists!"]
+                                       :error)
+                                      (do
+                                        (editor-handler/set-block-property! block-id :step-form title)
+                                        (editor-handler/set-block-property! block-id :step-picture step-picture)
+                                        (when (true? first-answer-as-step-title?)
+                                          (editor-handler/set-block-property! block-id :first-answer-to-title true))
+                                        (editor-handler/set-block-property! block-id :reward-for-answer reward-value)
+                                        (when (false? including-parent?)
+                                          (editor-handler/set-block-property! block-id :including-parent false))
+                                        (state/hide-custom-context-menu!)))))))])
+      (ui/menu-link
+       {:key "Make step questions"
+        :on-click (fn [e]
+                    (util/stop e)
+                    (reset! edit? true))}
+       "Make step questions"))))
+
 (rum/defc block-context-menu-content
   [target block-id]
   (rum/with-context [[t] i18n/*tongue-context*]
@@ -170,6 +251,8 @@
            "Copy block ref")
 
           (block-template block-id)
+
+          (block-step-template block-id)
 
           ;; (ui/menu-link
           ;;  {:key "Make template"

@@ -16,6 +16,8 @@
             [cljs-time.core :as t]
             [cljs-time.coerce :as tc]
             [frontend.util :as util :refer [react] :refer-macros [profile]]
+            [debux.cs.core :as dbx :refer-macros [clog clogn dbg dbgn break
+                                                  clog_ clogn_ dbg_ dbgn_ break_]]
             [frontend.db-schema :as db-schema]
             [clojure.walk :as walk]
             [clojure.string :as string]))
@@ -471,6 +473,23 @@
   [repo page-id]
   (zero? (get-page-blocks-count repo page-id)))
 
+
+(comment
+
+
+  (defn get-block-parent-by-id
+        [repo block-id]
+        (when-let [conn (conn/get-conn repo)]
+                  (d/entity conn [:block/children block-id])))
+
+  (defn get-block-parent
+        [repo block-uuid]
+        (when-let [conn (conn/get-conn repo)]
+                  (when-let [block (d/entity conn [:block/uuid block-uuid])]
+                            (d/entity conn [:block/children (:db/id block)]))))
+
+  )
+
 (defn get-block-parent
   ([block-id]
    (get-block-parent (state/get-current-repo) block-id))
@@ -547,6 +566,7 @@
 
 (defn sort-by-left
   [blocks parent]
+  ;; (clogn ["sort-by-left " blocks parent])
   (let [blocks (keep-only-one-file blocks parent)]
     (when (not= (count blocks) (count (set (map :block/left blocks))))
       (let [duplicates (->> (map (comp :db/id :block/left) blocks)
@@ -561,6 +581,9 @@
                                                            blocks)
                                                    (map #(select-keys % [:db/id :block/level :block/content :block/file])))}))))]
         (util/pprint duplicates)))
+    (when-not (= (count blocks) (count (set (map :block/left blocks))))
+      (do (clogn "ASSERT FAILED!")
+          (clogn (mapv :block/content blocks))))
     (assert (= (count blocks) (count (set (map :block/left blocks)))) "Each block should have a different left node")
     (let [left->blocks (reduce (fn [acc b] (assoc acc (:db/id (:block/left b)) b)) {} blocks)]
       (loop [block parent
@@ -1065,6 +1088,7 @@
 
 (defn get-all-templates
   []
+  (println "get-all-templates")
   (let [pred (fn [db properties]
                (some? (:template properties)))]
     (->> (d/q
@@ -1078,6 +1102,23 @@
          (map (fn [[e m]]
                 [(get m :template) e]))
          (into {}))))
+
+(defn get-all-step-templates
+      []
+      (println "get-all-step-templates")
+      (let [pred (fn [db properties]
+                     (some? (:step-form properties)))]
+           (->> (d/q
+                  '[:find ?b ?p
+                    :in $ ?pred
+                    :where
+                    [?b :block/properties ?p]
+                    [(?pred $ ?p)]]
+                  (conn/get-conn)
+                  pred)
+                (map (fn [[e m]]
+                         [(get m :step-form) e]))
+                (into {}))))
 
 (defonce blocks-count-cache (atom nil))
 

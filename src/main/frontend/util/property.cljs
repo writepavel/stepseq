@@ -14,7 +14,9 @@
 
 (def built-in-properties
   (set/union
-   #{:id :custom-id :background-color :heading :collapsed :created-at :last-modified-at :created_at :last_modified_at}
+   #{:id :custom-id :background-color :heading 
+   :step-question 
+   :collapsed :created-at :last-modified-at :created_at :last_modified_at}
    (set (map keyword config/markers))))
 
 (defn properties-built-in?

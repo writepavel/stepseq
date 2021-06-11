@@ -91,6 +91,10 @@
        ["LATER" (->marker "LATER")]
        ["NOW" (->marker "NOW")]])))
 
+(def step-command
+  [[:editor/input "/" nil]
+   [:editor/search-step-template]])
+
 ;; Credits to roamresearch.com
 
 (defn- ->heading
@@ -143,6 +147,7 @@
                          [:editor/search-block :reference]]]
      ["Block Embed" (embed-block)]
      ["Link" link-steps]
+     ["Step" step-command]
      ["Template" [[:editor/input "/" nil]
                   [:editor/search-template]]]
      ;; same as link
@@ -508,6 +513,9 @@
 
 (defmethod handle-step :editor/search-template [[_]]
   (state/set-editor-show-template-search! true))
+
+(defmethod handle-step :editor/search-step-template [[_]]
+  (state/set-editor-show-step-template-search! true))
 
 (defmethod handle-step :editor/show-input [[_ option]]
   (state/set-editor-show-input! option))

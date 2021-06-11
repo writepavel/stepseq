@@ -2,6 +2,7 @@
   (:require [frontend.storage :as storage]
             [rum.core :as rum]
             [frontend.util :as util :refer-macros [profile]]
+            [frontend.util.cursor :as cursor]
             [clojure.string :as string]
             [cljs-bean.core :as bean]
             [medley.core :as medley]
@@ -81,6 +82,7 @@
     :editor/show-input nil
     :editor/last-saved-cursor nil
     :editor/editing? nil
+    :editor/last-edit-block-input-id nil
     :editor/last-edit-block-id nil
     :editor/in-composition? false
     :editor/content {}
@@ -116,6 +118,16 @@
     :electron/updater-pending? false
     :electron/updater {}
 
+    ;; plugin
+    :plugin/indicator-text        nil
+    :plugin/installed-plugins     {}
+    :plugin/installed-themes      []
+    :plugin/installed-commands    {}
+    :plugin/simple-commands       {}
+    :plugin/selected-theme        nil
+    :plugin/selected-unpacked-pkg nil
+    :plugin/active-readme         nil
+
     ;; all notification contents as k-v pairs
     :notification/contents {}
     :graph/syncing? false
@@ -141,8 +153,7 @@
 
 (defn get-current-page
   []
-  (and
-   (= :page (get-current-route))
+  (when (= :page (get-current-route))
    (get-in (get-route-match)
            [:path-params :name])))
 
@@ -204,9 +215,9 @@
   (true? (:feature/enable-grammarly?
           (get (sub-config) (get-current-repo)))))
 
-(defn store-all-ids-in-text?
-  []
-  (true? (:text/store-all-ids (get-config))))
+;; (defn store-block-id-in-file?
+;;   []
+;;   (true? (:block/store-id-in-file? (get-config))))
 
 (defn scheduled-deadlines-disabled?
   []
@@ -431,7 +442,7 @@
 
 (defn get-last-edit-input-id
   []
-  (:editor/last-edit-block-id @state))
+  (:editor/last-edit-block-input-id @state))
 
 (defn editing?
   []
@@ -699,6 +710,10 @@
 
 (defn get-last-edit-block
   []
+  (:editor/last-edit-block @state))
+
+(defn get-current-edit-block-and-position
+  []
   (let [edit-input-id (get-edit-input-id)
         edit-block (get-edit-block)
         block-element (when edit-input-id (gdom/getElement (string/replace edit-input-id "edit-block" "ls-block")))
@@ -707,7 +722,7 @@
     (when container
       {:last-edit-block edit-block
        :container (gobj/get container "id")
-       :pos (util/get-input-pos (gdom/getElement edit-input-id))})))
+       :pos (cursor/pos (gdom/getElement edit-input-id))})))
 
 (defn set-editing!
   ([edit-input-id content block cursor-range]
@@ -728,7 +743,8 @@
                     (assoc
                      :editor/block block
                      :editor/editing? {edit-input-id true}
-                     :editor/last-edit-block-id edit-input-id
+                     :editor/last-edit-block-input-id edit-input-id
+                     :editor/last-edit-block block
                      :cursor-range cursor-range))))
 
        (when-let [input (gdom/getElement edit-input-id)]
@@ -741,7 +757,7 @@
              ;; it seems to me textarea autoresize is completely broken
              #_(set! (.-value input) (string/trim content)))
            (when move-cursor?
-             (util/move-cursor-to input pos))))))))
+             (cursor/move-cursor-to input pos))))))))
 
 (defn clear-edit!
   []
@@ -900,13 +916,8 @@
   [repo-url value]
   (swap! state assoc-in [:git/status repo-url] value))
 
-(defn get-shortcut
-  ([key]
-   (get-shortcut (get-current-repo) key))
-  ([repo key]
-   (or
-    (get (storage/get (str repo "-shortcuts")) key)
-    (get-in @state [:config repo :shortcuts key]))))
+(defn shortcuts []
+  (get-in @state [:config (get-current-repo) :shortcuts]))
 
 (defn get-me
   []
@@ -1026,6 +1037,10 @@
   (set-state! :ui/developer-mode? value)
   (storage/set "developer-mode" (str value)))
 
+(defn developer-mode?
+  []
+  (:ui/developer-mode? @state))
+
 (defn get-notification-contents
   []
   (get @state :notification/contents))
@@ -1046,9 +1061,7 @@
 
 (defn set-config!
   [repo-url value]
-  (set-state! [:config repo-url] value)
-  (let [shortcuts (or (:shortcuts value) {})]
-    (storage/set (str repo-url "-shortcuts") shortcuts)))
+  (set-state! [:config repo-url] value))
 
 (defn get-git-auto-push?
   ([]
@@ -1083,6 +1096,15 @@
 (defn get-commands
   []
   (:commands (get-config)))
+
+(defn get-plugins-commands
+  []
+  (mapcat seq (flatten (vals (:plugin/installed-commands @state)))))
+
+(defn get-plugins-commands-with-type
+  [type]
+  (filterv #(= (keyword (first %)) (keyword type))
+           (apply concat (vals (:plugin/simple-commands @state)))))
 
 (defn get-scheduled-future-days
   []
@@ -1291,3 +1313,16 @@
 (defn get-editor-cp
   []
   (get-in @state [:view/components :editor]))
+
+(defn exit-editing-and-set-selected-blocks!
+  ([blocks]
+   (exit-editing-and-set-selected-blocks! blocks :down))
+  ([blocks direction]
+   (util/clear-selection!)
+   (clear-edit!)
+   (set-selection-blocks! blocks direction)
+   (util/select-highlight! blocks)))
+
+(defn get-favorites-name
+  []
+  (:name/favorites (get-config)))

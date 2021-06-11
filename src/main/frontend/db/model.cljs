@@ -357,6 +357,9 @@
              [?e2 :block/alias ?e1]]
             [(alias ?e2 ?e1)
              [?e1 :block/alias ?e2]]
+            [(alias ?e1 ?e3)
+             [?e1 :block/alias ?e2]
+             [?e2 :block/alias ?e3]]
             [(alias ?e3 ?e1)
              [?e1 :block/alias ?e2]
              [?e2 :block/alias ?e3]]])
@@ -386,9 +389,14 @@
   [repo page-name]
   (let [alias-ids (page-alias-set repo page-name)]
     (when (seq alias-ids)
-      (->> (get-page-names-by-ids repo alias-ids)
-           distinct
-           (remove #(= (string/lower-case %) (string/lower-case page-name)))))))
+      (let [names (->> (get-page-names-by-ids repo alias-ids)
+                       distinct
+                       (remove #(= (string/lower-case %) (string/lower-case page-name))))
+            lookup-refs (map (fn [name]
+                               [:block/name (string/lower-case name)]) names)]
+        (->> (db-utils/pull-many repo '[:block/name :block/original-name] lookup-refs)
+             (map (fn [m]
+                    (or (:block/original-name m) (:block/name m)))))))))
 
 (defn with-block-refs-count
   [repo blocks]
@@ -469,7 +477,16 @@
 
 (defn page-empty?
   [repo page-id]
-  (zero? (get-page-blocks-count repo page-id)))
+  (empty? (:block/_parent (db-utils/entity repo page-id))))
+
+(defn page-empty-or-dummy?
+  [repo page-id]
+  (or
+   (page-empty? repo page-id)
+   (when-let [db (conn/get-conn repo)]
+     (let [datoms (d/datoms db :avet :block/page page-id)]
+       (and (= (count datoms) 1)
+            (= "" (:block/content (db-utils/pull (:e (first datoms))))))))))
 
 (defn get-block-parent
   ([block-id]
@@ -542,12 +559,12 @@
 
 ;; FIXME: alert
 (defn- keep-only-one-file
-  [blocks parent]
+  [blocks]
   (filter (fn [b] (= (:block/file b) (:block/file (first blocks)))) blocks))
 
 (defn sort-by-left
   [blocks parent]
-  (let [blocks (keep-only-one-file blocks parent)]
+  (let [blocks (keep-only-one-file blocks)]
     (when (not= (count blocks) (count (set (map :block/left blocks))))
       (let [duplicates (->> (map (comp :db/id :block/left) blocks)
                             frequencies
@@ -1100,11 +1117,14 @@
          (map :v)
          (map (fn [id]
                 (let [e (db-utils/entity [:block/uuid id])]
-                  {:db/id (:db/id e)
-                   :block/uuid id
-                   :block/page (:db/id (:block/page e))
-                   :block/content (:block/content e)
-                   :block/format (:block/format e)}))))))
+                  (when (and (not (:block/name e))
+                             (not (string/blank? (:block/content e))))
+                    {:db/id (:db/id e)
+                     :block/uuid id
+                     :block/page (:db/id (:block/page e))
+                     :block/content (:block/content e)
+                     :block/format (:block/format e)}))))
+         (remove nil?))))
 
 (defn get-assets
   [datoms]

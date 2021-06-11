@@ -95,7 +95,8 @@
   [repo idx db-id block-type block-data t]
   (case block-type
     :contents
-    [(t :right-side-bar/contents)
+    [(or (state/get-favorites-name)
+         (t :right-side-bar/favorites))
      (contents)]
 
     :recent
@@ -130,7 +131,8 @@
           (block-cp repo idx block-data)]]))
 
     :page
-    (let [page-name (:block/name block-data)]
+    (let [page-name (or (:block/name block-data)
+                        db-id)]
       [[:a {:href     (rfe/href :page {:name page-name})
             :on-click (fn [e]
                         (when (gobj/get e "shiftKey")
@@ -169,9 +171,11 @@
 
 (rum/defc sidebar-item < rum/reactive
   [repo idx db-id block-type block-data t]
+
   (let [item
         (if (= :page block-type)
-          (let [page (db/query-entity-in-component db-id)]
+          (let [lookup-ref (if (number? db-id) db-id [:block/name (string/lower-case db-id)])
+                page (db/query-entity-in-component lookup-ref)]
             (when (seq page)
               (build-sidebar-item repo idx db-id block-type page t)))
           (build-sidebar-item repo idx db-id block-type block-data t))]
@@ -267,7 +271,8 @@
             [:div.ml-4.text-sm
              [:a.cp__right-sidebar-settings-btn {:on-click (fn [e]
                                                              (state/sidebar-add-block! repo "contents" :contents nil))}
-              (t :right-side-bar/contents)]]
+              (or (state/get-favorites-name)
+                  (t :right-side-bar/favorites))]]
 
             [:div.ml-4.text-sm
              [:a.cp__right-sidebar-settings-btn {:on-click (fn [_e]

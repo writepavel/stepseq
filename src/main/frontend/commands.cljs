@@ -1,5 +1,6 @@
 (ns frontend.commands
   (:require [frontend.util :as util]
+            [frontend.util.cursor :as cursor]
             [frontend.util.marker :as marker]
             [frontend.util.priority :as priority]
             [frontend.date :as date]
@@ -12,6 +13,7 @@
             [goog.object :as gobj]
             [frontend.format :as format]
             [frontend.handler.common :as common-handler]
+            [frontend.handler.plugin :as plugin-handler]
             [frontend.handler.draw :as draw]
             [frontend.handler.notification :as notification]
             [promesa.core :as p]))
@@ -174,10 +176,11 @@
 
      ;; TODO:
      ;; ["Upload a file" nil]
-     ]
+]
     (markdown-headings)
     ;; Allow user to modify or extend, should specify how to extend.
-    (state/get-commands))
+    (state/get-commands)
+    (state/get-plugins-commands))
    (remove nil?)
    (util/distinct-by-last-wins first)))
 
@@ -276,7 +279,7 @@
     :as option}]
   (when-let [input (gdom/getElement id)]
     (let [edit-content (gobj/get input "value")
-          current-pos (:pos (util/get-caret-pos input))
+          current-pos (cursor/pos input)
           prefix (subs edit-content 0 current-pos)
           space? (when (and last-pattern prefix)
                    (let [s (when-let [last-index (string/last-index-of prefix last-pattern)]
@@ -302,7 +305,7 @@
                         (or forward-pos 0))
                      (or backward-pos 0))]
       (state/set-block-content-and-last-pos! id new-value new-pos)
-      (util/move-cursor-to input
+      (cursor/move-cursor-to input
                            (if (or backward-pos forward-pos)
                              new-pos
                              (+ new-pos 1))))))
@@ -313,7 +316,7 @@
     :as option}]
   (let [input (gdom/getElement id)
         edit-content (gobj/get input "value")
-        current-pos (:pos (util/get-caret-pos input))
+        current-pos (cursor/pos input)
         prefix (subs edit-content 0 current-pos)
         new-value (str prefix
                        value
@@ -323,7 +326,7 @@
                       (or forward-pos 0))
                    (or backward-pos 0))]
     (state/set-block-content-and-last-pos! id new-value new-pos)
-    (util/move-cursor-to input new-pos)
+    (cursor/move-cursor-to input new-pos)
     (when check-fn
       (check-fn new-value (dec (count prefix)) new-pos))))
 
@@ -333,7 +336,7 @@
     :as option}]
   (let [input (gdom/getElement id)
         edit-content (gobj/get input "value")
-        current-pos (:pos (util/get-caret-pos input))
+        current-pos (cursor/pos input)
         suffix (subs edit-content 0 current-pos)
         new-value (str value
                        suffix
@@ -343,7 +346,7 @@
                       (or forward-pos 0))
                    (or backward-pos 0))]
     (state/set-block-content-and-last-pos! id new-value new-pos)
-    (util/move-cursor-to input new-pos)
+    (cursor/move-cursor-to input new-pos)
     (when check-fn
       (check-fn new-value (dec (count suffix)) new-pos))))
 
@@ -354,7 +357,7 @@
   (let [selected? (not (string/blank? selected))
         input (gdom/getElement id)
         edit-content (gobj/get input "value")
-        current-pos (:pos (util/get-caret-pos input))
+        current-pos (cursor/pos input)
         prefix (subs edit-content 0 current-pos)
         postfix (if selected?
                   (string/replace-first (subs edit-content current-pos)
@@ -367,7 +370,7 @@
                       (or forward-pos 0))
                    (or backward-pos 0))]
     (state/set-block-content-and-last-pos! id new-value new-pos)
-    (util/move-cursor-to input new-pos)
+    (cursor/move-cursor-to input new-pos)
     (when selected?
       (.setSelectionRange input new-pos (+ new-pos (count selected))))
     (when check-fn
@@ -377,13 +380,13 @@
   [id]
   (let [input (gdom/getElement id)
         edit-content (gobj/get input "value")
-        current-pos (:pos (util/get-caret-pos input))
+        current-pos (cursor/pos input)
         prefix (subs edit-content 0 (dec current-pos))
         new-value (str prefix
                        (subs edit-content (inc current-pos)))
         new-pos (count prefix)]
     (state/set-block-content-and-last-pos! id new-value new-pos)
-    (util/move-cursor-to input new-pos)))
+    (cursor/move-cursor-to input new-pos)))
 
 (defn get-matched-commands
   ([text]
@@ -403,6 +406,9 @@
 
 (defmulti handle-step first)
 
+(defmethod handle-step :editor/hook [[_ event {:keys [pid] :as payload}] format]
+  (plugin-handler/hook-plugin-editor event (merge payload {:format format :uuid (:block/uuid (state/get-edit-block))}) pid))
+
 (defmethod handle-step :editor/input [[_ value option]]
   (when-let [input-id (state/get-edit-input-id)]
     (insert! input-id value option)))
@@ -410,25 +416,30 @@
 (defmethod handle-step :editor/cursor-back [[_ n]]
   (when-let [input-id (state/get-edit-input-id)]
     (when-let [current-input (gdom/getElement input-id)]
-      (util/cursor-move-back current-input n))))
+      (cursor/move-cursor-backward current-input n))))
 
 (defmethod handle-step :editor/cursor-forward [[_ n]]
   (when-let [input-id (state/get-edit-input-id)]
     (when-let [current-input (gdom/getElement input-id)]
-      (util/cursor-move-forward current-input n))))
+      (cursor/move-cursor-forward current-input n))))
 
 (defmethod handle-step :editor/move-cursor-to-end [[_]]
   (when-let [input-id (state/get-edit-input-id)]
     (when-let [current-input (gdom/getElement input-id)]
-      (util/move-cursor-to-end current-input))))
+      (cursor/move-cursor-to-end current-input))))
 
-(defmethod handle-step :editor/clear-current-slash [[_]]
+(defmethod handle-step :editor/restore-saved-cursor [[_]]
+  (when-let [input-id (state/get-edit-input-id)]
+    (when-let [current-input (gdom/getElement input-id)]
+      (cursor/move-cursor-to current-input (:editor/last-saved-cursor @state/state)))))
+
+(defmethod handle-step :editor/clear-current-slash [[_ space?]]
   (when-let [input-id (state/get-edit-input-id)]
     (when-let [current-input (gdom/getElement input-id)]
       (let [edit-content (gobj/get current-input "value")
-            current-pos (:pos (util/get-caret-pos current-input))
+            current-pos (cursor/pos current-input)
             prefix (subs edit-content 0 current-pos)
-            prefix (util/replace-last slash prefix "")
+            prefix (util/replace-last slash prefix "" (boolean space?))
             new-value (str prefix
                            (subs edit-content current-pos))]
         (state/set-block-content-and-last-pos! input-id
@@ -468,7 +479,7 @@
         (let [new-pos (compute-pos-delta-when-change-marker
                        current-input edit-content new-value marker (dec slash-pos))]
           ;; TODO: any performance issue?
-          (js/setTimeout #(util/set-caret-pos! current-input new-pos) 10))))))
+          (js/setTimeout #(cursor/move-cursor-to current-input new-pos) 10))))))
 
 (defmethod handle-step :editor/set-priority [[_ priority] format]
   (when-let [input-id (state/get-edit-input-id)]

@@ -2,6 +2,7 @@
   (:require [frontend.format.protocol :as protocol]
             [frontend.util :as util]
             [frontend.utf8 :as utf8]
+            [frontend.text :as text]
             [clojure.string :as string]
             [cljs-bean.core :as bean]
             [cljs.core.match :refer-macros [match]]
@@ -13,7 +14,7 @@
 
 (defonce parseJson (gobj/get Mldoc "parseJson"))
 (defonce parseInlineJson (gobj/get Mldoc "parseInlineJson"))
-(defonce parseHtml (gobj/get Mldoc "parseHtml"))
+(defonce exportToHtml (gobj/get Mldoc "exportToHtml"))
 (defonce anchorLink (gobj/get Mldoc "anchorLink"))
 (defonce parseAndExportMarkdown (gobj/get Mldoc "parseAndExportMarkdown"))
 (defonce parseAndExportOPML (gobj/get Mldoc "parseAndExportOPML"))
@@ -62,8 +63,11 @@
                           (or references default-references)))
 
 (defn parse-export-opml
-  [content config title]
-  (parseAndExportOPML content config title))
+  [content config title references]
+  (parseAndExportOPML content
+                      config
+                      title
+                      (or references default-references)))
 
 (defn ast-export-markdown
   [ast config references]
@@ -195,9 +199,11 @@
           (if (and (vector? block)
                    (= "Src" (first block)))
             (let [{:keys [start_pos end_pos]} pos-meta
-                  block ["Src" (assoc (second block)
-                                      :full_content
-                                      (utf8/substring content start_pos end_pos))]]
+                  content (utf8/substring content start_pos end_pos)
+                  spaces (re-find #"^[\t ]+" (first (string/split-lines content)))
+                  content (if spaces (text/remove-indentation-spaces content (count spaces) true)
+                              content)
+                  block ["Src" (assoc (second block) :full_content content)]]
               [block pos-meta])
             [block pos-meta])) ast)))
 
@@ -237,15 +243,15 @@
   (toEdn [this content config]
     (->edn content config))
   (toHtml [this content config]
-    (parseHtml content config))
+    (exportToHtml content config))
   (loaded? [this]
     true)
   (lazyLoad [this ok-handler]
     true)
   (exportMarkdown [this content config references]
     (parse-export-markdown content config references))
-  (exportOPML [this content config title]
-    (parse-export-opml content config title)))
+  (exportOPML [this content config title references]
+    (parse-export-opml content config title references)))
 
 (defn plain->text
   [plains]

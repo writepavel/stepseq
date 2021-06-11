@@ -342,6 +342,7 @@
     :href href
     :on-click (fn [e]
                 (util/stop e)
+                (editor-handler/insert-first-page-block-if-not-exists! redirect-page-name)
                 (if (gobj/get e "shiftKey")
                   (when-let [page-entity (db/entity [:block/name redirect-page-name])]
                     (state/sidebar-add-block!
@@ -377,7 +378,7 @@
                                (:block/alias? config)
                                page
 
-                               (db/page-empty? (state/get-current-repo) (:db/id page-entity))
+                               (db/page-empty-or-dummy? (state/get-current-repo) (:db/id page-entity))
                                (let [source-page (model/get-alias-source-page (state/get-current-repo)
                                                                               (string/lower-case page-name))]
                                  (or (when source-page (:block/name source-page))
@@ -396,12 +397,17 @@
                                           :font-weight    500
                                           :max-height     600
                                           :padding-bottom 64}}
-                                 [:h2.font-bold.text-lg page-name]
-                                 (let [page (db/entity [:block/name (string/lower-case page-name)])]
+                                 [:h2.font-bold.text-lg (if (= page redirect-page-name)
+                                                          page
+                                                          [:span
+                                                           [:span.text-sm.mr-2 "Alias:" ]
+                                                           redirect-page-name])]
+                                 (let [page (db/entity [:block/name (string/lower-case redirect-page-name)])]
+                                   (editor-handler/insert-first-page-block-if-not-exists! redirect-page-name)
                                    (when-let [f (state/get-page-blocks-cp)]
                                      (f (state/get-current-repo) page {:sidebar? sidebar? :preview? true})))]
                    :interactive true
-                   :delay       1000}
+                   :delay       [1000, 100]}
                   inner)
         inner))))
 
@@ -560,7 +566,7 @@
                                                :max-height 600}}
                                       (blocks-container [block] (assoc config :preview? true))]
                         :interactive true
-                        :delay       1000} inner)
+                        :delay       [1000, 100]} inner)
              inner))]
         [:span.warning.mr-1 {:title "Block ref invalid"}
          (util/format "((%s))" id)]))))
@@ -1178,23 +1184,23 @@
                             (editor-handler/set-marker block marker)))]
       (case marker
         "NOW"
-        [:a.marker-switch
+        [:a.marker-switch.block-marker
          {:title "Change from NOW to LATER"
           :on-click (set-marker-fn "LATER")}
          "NOW"]
         "LATER"
-        [:a.marker-switch
+        [:a.marker-switch.block-marker
          {:title "Change from LATER to NOW"
           :on-click (set-marker-fn "NOW")}
          "LATER"]
 
         "TODO"
-        [:a.marker-switch
+        [:a.marker-switch.block-marker
          {:title "Change from TODO to DOING"
           :on-click (set-marker-fn "DOING")}
          "TODO"]
         "DOING"
-        [:a.marker-switch
+        [:a.marker-switch.block-marker
          {:title "Change from DOING to TODO"
           :on-click (set-marker-fn "TODO")}
          "DOING"]
@@ -1204,7 +1210,7 @@
   [{:block/keys [pre-block? marker] :as block}]
   (when-not pre-block?
     (if (contains? #{"IN-PROGRESS" "WAIT" "WAITING"} marker)
-      [:span {:class (str "task-status " (string/lower-case marker))
+      [:span {:class (str "task-status block-marker " (string/lower-case marker))
               :style {:margin-right 3.5}}
        (string/upper-case marker)])))
 
@@ -1357,7 +1363,16 @@
         properties (apply dissoc properties property/built-in-properties)
         pre-block? (:block/pre-block? block)
         properties (if pre-block?
-                     (dissoc properties :title :filters)
+                     (let [repo (state/get-current-repo)
+                           properties (dissoc properties :title :filters)
+                           aliases (db/get-page-alias-names repo
+                                                            (:block/name (db/pull (:db/id (:block/page block)))))]
+                       (if (seq aliases)
+                         (if (:alias properties)
+                           (update properties :alias (fn [c]
+                                                       (util/distinct-by string/lower-case (concat c aliases))))
+                           (assoc properties :alias aliases))
+                         properties))
                      properties)
         properties (sort properties)]
     (cond
@@ -1430,7 +1445,11 @@
         (let [block (or (db/pull [:block/uuid (:block/uuid block)]) block)
               f #(let [cursor-range (util/caret-range (gdom/getElement block-id))
                        content (property/remove-built-in-properties (:block/format block)
-                                                                 content)]
+                                                                    content)]
+                   ;; save current editing block
+                   (let [{:keys [value] :as state} (editor-handler/get-state)]
+                     (editor-handler/save-block! state value))
+
                    (state/set-editing!
                     edit-input-id
                     content

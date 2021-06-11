@@ -144,16 +144,17 @@
   ([text format]
    (remove-level-spaces text format false))
   ([text format space?]
-   (cond
-     (string/blank? text)
-     ""
+   (when format
+     (cond
+       (string/blank? text)
+       ""
 
-     (and (= "markdown" (name format))
-          (string/starts-with? text "---"))
-     text
+       (and (= "markdown" (name format))
+            (string/starts-with? text "---"))
+       text
 
-     :else
-     (remove-level-space-aux! text (config/get-block-pattern format) space?))))
+       :else
+       (remove-level-space-aux! text (config/get-block-pattern format) space?)))))
 
 (defn build-data-value
   [col]
@@ -172,3 +173,15 @@
       (string/replace "- DOING -> DONE [" "* DOING -> DONE [")
       (string/replace "- LATER -> DONE [" "* LATER -> DONE [")
       (string/replace "- NOW -> DONE [" "* NOW -> DONE [")))
+
+(defn remove-indentation-spaces
+  [s level remove-first-line?]
+  (let [lines (string/split-lines s)
+        [f & r] lines
+        body (map (fn [line]
+                    (if (string/blank? (util/safe-subs line 0 level))
+                      (util/safe-subs line level)
+                      line))
+               (if remove-first-line? lines r))
+        content (if remove-first-line? body (cons f body))]
+    (string/join "\n" content)))

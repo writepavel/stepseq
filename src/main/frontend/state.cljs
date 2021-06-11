@@ -34,6 +34,7 @@
     :network/online? true
     :indexeddb/support? true
     :me nil
+    :vault nil
     :git/current-repo (storage/get :git/current-repo)
     :git/status {}
     :format/loading {}
@@ -236,6 +237,11 @@
 (defn enable-git-auto-push?
   [repo]
   (not (false? (:git-auto-push
+                (get (sub-config) repo)))))
+
+(defn enable-vault-auto-push?
+  [repo]
+  (not (false? (:vault-auto-push
                 (get (sub-config) repo)))))
 
 (defn enable-block-time?
@@ -653,6 +659,13 @@
     (let [repos (get-repos)]
       (some #(when (= repo (:url %)) %) repos))))
 
+;; TODO it is local fs url isn't it? So no difference between get-github-token and this get-syncserver-token
+(defn get-syncserver-token
+  [repo]
+  (when repo
+    (let [repos (get-repos)]
+      (some #(when (= repo (:url %)) %) repos))))
+
 (defn toggle-sidebar-open?!
   []
   (swap! state update :ui/sidebar-open? not))
@@ -921,6 +934,10 @@
 (defn get-me
   []
   (:me @state))
+
+(defn syncserver-authed?
+  []
+  (:syncserver-authed? (:vault @state)))
 
 (defn github-authed?
   []

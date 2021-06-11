@@ -15,6 +15,7 @@
             [frontend.components.repo :as repo]
             [frontend.components.search :as search]
             [frontend.components.export :as export]
+            [frontend.components.vault :as vault]
             [frontend.components.right-sidebar :as sidebar]
             [frontend.handler.page :as page-handler]
             [frontend.handler.web.nfs :as nfs]
@@ -146,6 +147,12 @@
                   :title (t :discord-title)
                   :target "_blank"}
         :icon svg/discord}
+
+     (when (not logged?)
+       {:title (t :login-syncserver)
+        :options {:on-click #(state/set-modal! vault/syncserver-login)}
+        :icon svg/pages-sm})
+
        (when logged?
          {:title (t :sign-out)
           :options {:on-click user-handler/sign-out!}

@@ -32,6 +32,8 @@
     "Repos"
     :repo-add
     "Add another repo"
+    :vault-add
+    "Add another vault"
     :graph
     "Graph"
     :all-files

@@ -24,6 +24,10 @@
     {:name :repo-add
      :view repo/add-repo}]
 
+   ["/vault/add"
+    {:name :vault-add
+     :view repo/add-vault}]
+
    ["/all-files"
     {:name :all-files
      :view file/files}]

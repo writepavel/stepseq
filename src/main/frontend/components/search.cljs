@@ -155,13 +155,13 @@
           result (if config/publishing?
                    (concat pages files blocks)
                    (concat new-page pages files blocks))]
-      [:div.rounded-md.shadow-lg
+      [:div.rounded-md.shadow-lg.search-ac
        {:style (merge
                 {:top 48
                  :left 32
                  :height 400
                  :width 700
-                 :overflow "hidden"})
+                 :overflow "auto"})
         :class (if all? "search-all" "absolute")}
        (ui/auto-complete
         result

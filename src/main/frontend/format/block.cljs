@@ -359,6 +359,7 @@
                                          {:block/name (string/lower-case ref)}
                                          ref)))
                                 (remove vector?)
+                                (remove nil?)
                                 (distinct))]
         (recur (rest blocks)
                (conj acc (assoc block :block/path-refs path-ref-pages))
@@ -370,19 +371,6 @@
     (assoc block :tags (map (fn [tag]
                               [:block/name (string/lower-case tag)]) tags))
     block))
-
-(defn- remove-indentation-spaces
-  [s level]
-  (let [level (inc level)
-        lines (string/split-lines s)
-        [f & r] lines
-        body (map (fn [line]
-                    (if (string/blank? (util/safe-subs line 0 level))
-                      (util/safe-subs line level)
-                      line))
-                  r)
-        content (cons f body)]
-    (string/join "\n" content)))
 
 (defn src-block?
   [block]
@@ -401,13 +389,32 @@
     (let [content (when content
                     (let [content (text/remove-level-spaces content format)]
                       (if (or (:pre-block? block)
-                              (= (:format block) :org)
-                              (src-block? block))
+                              (= (:format block) :org))
                         content
-                        (remove-indentation-spaces content (:level block)))))]
+                        (text/remove-indentation-spaces content (inc (:level block)) false))))]
       (if (= format :org)
         content
         (property/->new-properties content)))))
+
+(defn- remove-indentations
+  [format level element]
+  (if (= format :org)
+    element
+    (case (first element)
+      "Paragraph"
+      ["Paragraph"
+       (let [level (if (= (ffirst (second element)) "Plain")
+                     (count (re-find #"^[\s\t]+" (second (first (second element)))))
+                     level)]
+         (->> (partition-by #(contains? #{["Break_Line"] ["Hard_Break_Line"]} %) (second element))
+             (map (fn [c]
+                    (if (and (= (ffirst c) "Plain")
+                             (>= (count (re-find #"^[\s\t]+" (second (first c)))) level))
+                      (cons ["Plain" (subs (second (first c)) level)] (rest c))
+                      c)))
+             (apply concat)))]
+
+      element)))
 
 (defn extract-blocks
   [blocks content with-id? format]
@@ -475,7 +482,9 @@
 
                       block (-> (assoc block
                                        :uuid id
-                                       :body (vec (reverse block-body))
+                                       :body (vec
+                                              (->> (reverse block-body)
+                                                   (map #(remove-indentations format (:level block) %))))
                                        :properties (:properties properties)
                                        :refs ref-pages-in-properties
                                        :children (or current-block-children [])
@@ -609,7 +618,8 @@
                             (map :db/id))
            {:block/keys [refs]} new-block
            ref-pages (filter :block/name refs)
-           path-ref-pages (concat ref-pages parent-refs [(:db/id page)])
+           path-ref-pages (->> (concat ref-pages parent-refs [(:db/id page)])
+                               (remove nil?))
            block (merge
                   block
                   new-block

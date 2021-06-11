@@ -1,4 +1,4 @@
-{:paths ["src/main" "templates"]
+{:paths ["src/main" "src/workspaces" "templates"]
  :deps
  {org.clojure/clojure         {:mvn/version "1.10.0"}
   cheshire/cheshire {:mvn/version "5.10.0"}
@@ -37,7 +37,9 @@
   philoskim/debux             {:mvn/version "0.7.9"}
   haslett/haslett             {:mvn/version "0.1.6"}
   binaryage/devtools          {:mvn/version "1.0.2"}
-  instaparse/instaparse       {:mvn/version "1.4.10"}}
+  camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.2"}
+  instaparse/instaparse       {:mvn/version "1.4.10"}
+  nubank/workspaces           {:mvn/version "1.1.1"}}
 
  :aliases {:cljs {:extra-paths ["src/dev-cljs/" "src/test/" "src/electron/"]
                   :extra-deps  {org.clojure/clojurescript   {:mvn/version "1.10.844"}

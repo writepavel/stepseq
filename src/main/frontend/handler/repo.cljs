@@ -15,6 +15,7 @@
             [frontend.handler.extract :as extract-handler]
             [frontend.handler.file :as file-handler]
             [frontend.handler.git :as git-handler]
+            [frontend.handler.vault :as vault-handler]
             [frontend.handler.notification :as notification]
             [frontend.handler.route :as route-handler]
             [frontend.handler.ui :as ui-handler]
@@ -540,6 +541,21 @@
   (js/setInterval #(push-if-auto-enabled! (state/get-current-repo))
                   (* (config/git-push-secs) 1000)))
 
+(defn periodically-pull-current-repo-from-sync-vault
+  []
+  (js/setInterval
+   (fn []
+     (p/let [repo-url (state/get-current-repo)
+             token (common-handler/get-syncserver-token repo-url)]
+       (when token
+         (pull repo-url nil))))
+   (* (config/git-pull-secs) 1000)))
+
+(defn periodically-push-current-repo-to-sync-vault
+  []
+  (js/setInterval #(push-if-auto-enabled! (state/get-current-repo))
+                  (* (config/git-push-secs) 1000)))
+
 (defn create-repo!
   [repo-url branch]
   (spec/validate :repos/url repo-url)
@@ -554,15 +570,47 @@
                (println "Something wrong!")
                (js/console.dir error))))
 
+(defn create-vault!
+  [vault-url]
+  (spec/validate :vaults/url vault-url)
+  (util/post (str config/api "vaults")
+             {:url vault-url}
+             (fn [result]
+               (if (:installation_id result)
+                 (set! (.-href js/window.location) config/website)
+                 (set! (.-href js/window.location) (str "http://localhost:8082/login"))))
+             (fn [error]
+               (println "Something wrong!")
+               (js/console.dir error))))
+
 (defn- clone-and-load-db
   [repo-url]
   (spec/validate :repos/url repo-url)
   (->
    (p/let [_ (clone repo-url)
-           _ (git-handler/git-set-username-email! repo-url (state/get-me))]
+           _ (git-handler/git-set-username-email! repo-url (state/get-me))
+           _ (vault-handler/vault-set-matrix-id! repo-url (state/get-me))]
      (load-db-and-journals! repo-url nil true))
    (p/catch (fn [error]
               (js/console.error error)))))
+
+(defn clone-and-pull-syncserver-vaults
+  [me]
+  (spec/validate :state/me me)
+  (doseq [{:keys [id url]} (:repos me)]
+    (let [repo url]
+      (if (db/cloned? repo)
+        (p/do!
+         (vault-handler/vault-set-matrix-id! repo me)
+         (pull repo nil))
+        (p/do!
+         (clone-and-load-db repo)))))
+
+(periodically-pull-current-repo)
+(periodically-push-current-repo)
+  (js/setTimeout (fn []
+                   (clone-and-pull-syncserver-vaults me))
+                 500))
 
 (defn clone-and-pull-repos
   [me]

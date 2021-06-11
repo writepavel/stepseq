@@ -31,6 +31,15 @@
         (widgets/add-graph :graph-types graph-types-s)))
     (widgets/add-graph)))
 
+(rum/defc add-vault
+  [args]
+  (if-let [graph-types (get-in args [:query-params :graph-types])]
+    (let [graph-types-s (->> (str/split graph-types #",")
+                             (mapv keyword))]
+      (when (seq graph-types-s)
+        (widgets/add-graph :graph-types graph-types-s)))
+    (widgets/add-graph)))
+
 (rum/defc repos < rum/reactive
   []
   (let [repos (->> (state/sub [:me :repos])
@@ -41,8 +50,9 @@
         [:div#graphs
          [:h1.title "All Graphs"]
          [:p.ml-2.opacity-70
-          (if (state/github-authed?)
-            "A \"graph\" in Logseq could be either a local directory or a git repo."
+          ;; (if (state/github-authed?)
+          (if (state/syncserver-authed?)
+            "A \"graph\" in Logseq could be 1) a local directory 2) sync server vault 3) both of them"
             "A \"graph\" in Logseq means a local directory.")]
 
          [:div.pl-1.content.mt-3
@@ -56,6 +66,11 @@
              (ui/button
               "Add another git repo"
               :href (rfe/href :repo-add nil {:graph-types "github"})
+              :intent "logseq"))
+           (when (state/logged?)
+             (ui/button
+              "Add another sync server vault"
+              :href (rfe/href :vault-add nil {:graph-types "sync-vault"})
               :intent "logseq"))]
           (for [{:keys [id url] :as repo} repos]
             (let [local? (config/local-db? url)]

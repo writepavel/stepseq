@@ -37,6 +37,21 @@
 
 (s/def :me/repos (s/* :repos/repo))
 
+;; vault
+
+(s/def :vaults/id string?)
+(s/def :vaults/url string?)
+(s/def :vaults/installation_id string?)
+(s/def :vaults/token string?)
+(s/def :vaults/expires_at string?)
+(s/def :vaults/vault (s/keys :req-un [:vaults/id :vaults/url :vaults/installation_id]
+                           :opt-un [:vaults/token :vaults/expires_at]))
+
+; Didn't know how to impl both `require token` and `not require token`version in :me key.
+(s/def :vaults/vault-require-token (s/keys :req-un [:vaults/id :vaults/url :vaults/installation_id
+                                                  :vaults/token :vaults/expires_at]))
+
+(s/def :me/vaults (s/* :vaults/vault))
 
 ;; project
 

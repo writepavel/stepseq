@@ -79,6 +79,45 @@
                     :error
                     false)))))))]])))
 
+(rum/defcs add-syncserver-vault <
+  (rum/local "" ::vault)
+  [state]
+  (let [vault-url (get state ::vault)]
+    (rum/with-context [[t] i18n/*tongue-context*]
+      [:div.flex.flex-col
+       [:div.w-full.mx-auto
+        [:div
+         [:div
+          [:h1.title
+           (t :syncserver/add-repo-prompt)]
+          [:div.mt-4.mb-4.relative.rounded-md.shadow-sm.max-w-xs
+           [:input#repo.form-input.block.w-full.sm:text-sm.sm:leading-5
+            {:autoFocus true
+             :placeholder "http://localhost:8082/username/vault"
+             :on-change (fn [e]
+                          (reset! vault-url (util/evalue e)))}]]
+          ;; [:label.font-medium "Default Branch (make sure it's matched with your setting on Github): "]
+          ;; [:div.mt-2.mb-4.relative.rounded-md.shadow-sm.max-w-xs
+          ;;  [:input#branch.form-input.block.w-full.sm:text-sm.sm:leading-5
+          ;;   {:value @branch
+          ;;    :placeholder "e.g. master"
+          ;;    :on-change (fn [e]
+          ;;                 (reset! branch (util/evalue e)))}]]
+          ]]
+
+        (ui/button
+         (t :syncserver/add-repo-prompt-confirm)
+         :on-click
+         (fn []
+           (let [vault-url (util/lowercase-first @vault-url)]
+             (if (util/starts-with? vault-url "http://localhost:8082/")
+               (repo-handler/create-vault! vault-url)
+
+               (notification/show!
+                [:p.text-gray-700.dark:text-gray-300 "Please input a valid vault url, e.g. http://localhost:8082/username/vault"]
+                :error
+                false)))))]])))
+
 (rum/defcs add-local-directory
   []
   (rum/with-context [[t] i18n/*tongue-context*]
@@ -111,12 +150,48 @@
             :or {graph-types [:local :github]}
             :as opts}]
   (let [github-authed? (state/github-authed?)
+        syncserver-authed? (state/syncserver-authed?)
         generate-f (fn [x]
                      (case x
                        :github
                        (when (and github-authed? (not (util/electron?)))
                          (rum/with-key (add-github-repo)
                            "add-github-repo"))
+
+                       :sync-vault
+                       (when syncserver-authed?
+                         (rum/with-key (add-syncserver-vault)
+                           "add-syncserver-vault"))
+
+                       :local
+                       (rum/with-key (add-local-directory)
+                         "add-local-directory")
+
+                       nil))
+        available-graph (->> (set graph-types)
+                             (keep generate-f)
+                             (vec)
+                             (interpose [:b.mt-10.mb-5.opacity-50 "OR"]))]
+    (rum/with-context [[t] i18n/*tongue-context*]
+      [:div.p-8.flex.flex-col available-graph])))
+
+(rum/defcs syncserver-login <
+  [state & {:keys [graph-types]
+            :or {graph-types [:local :github]}
+            :as opts}]
+  (let [github-authed? (state/github-authed?)
+        syncserver-authed? (state/syncserver-authed?)
+        generate-f (fn [x]
+                     (case x
+                       :github
+                       (when (and github-authed? (not (util/electron?)))
+                         (rum/with-key (add-github-repo)
+                           "add-github-repo"))
+
+                       :sync-vault
+                       (when syncserver-authed?
+                         (rum/with-key (add-syncserver-vault)
+                           "add-syncserver-vault"))
 
                        :local
                        (rum/with-key (add-local-directory)

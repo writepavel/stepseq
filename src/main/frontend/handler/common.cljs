@@ -167,3 +167,41 @@
   {:title page-name
    ;; :date (date/get-date-time-string)
    })
+
+(defn- get-syncserver-token*
+  [repo]
+  (spec/validate :repos/url repo)
+  (when repo
+    (let [{:keys [token expires_at] :as token-state}
+          (state/get-syncserver-token repo)]
+      (spec/validate :repos/repo token-state)
+      (if (and (map? token-state)
+               (string? expires_at))
+        (let [expires-at (tf/parse (tf/formatters :date-time-no-ms) expires_at)
+              now (t/now)
+              expired? (t/after? now expires-at)]
+          {:exist? true
+           :expired? expired?
+           :token token})
+        {:exist? false}))))
+
+(defn get-syncserver-token
+  ([]
+   (get-github-token  (state/get-current-repo)))
+  ([repo]
+   (when-not (config/local-db? repo)
+     (js/Promise.
+      (fn [resolve reject]
+        (let [{:keys [expired? token exist?]} (get-syncserver-token* repo)
+              valid-token? (and exist? (not expired?))]
+          (if valid-token?
+            (resolve token)
+            (request-app-tokens!
+             (fn []
+               (let [{:keys [expired? token exist?] :as token-m} (get-syncserver-token* repo)
+                     valid-token? (and exist? (not expired?))]
+                 (if valid-token?
+                   (resolve token)
+                   (do (log/error :token/failed-get-token token-m)
+                       (reject)))))
+             nil))))))))

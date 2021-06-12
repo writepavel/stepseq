@@ -170,7 +170,7 @@
     (let [pos (:editor/last-saved-cursor @state/state)
           input (gdom/getElement id)]
       (when input
-        (let [current-pos (:pos (util/get-caret-pos input))
+        (let [current-pos (cursor/pos input)
               edit-content (state/sub [:editor/content id])
               edit-block (state/sub :editor/block)
               q (or

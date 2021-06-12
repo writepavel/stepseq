@@ -660,16 +660,17 @@
            (when on-block-inserted-fn
              (on-block-inserted-fn new-block)
              ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-             ))))))
-  )
+             )))))))
 
-(defn api-insert-new-block!
-  [content {:keys [page block-uuid sibling? attributes]}]
-  (when (or page block-uuid)
+  (defn api-insert-new-block!
+    ([content {:keys [page last-block-uuid sibling? attributes] :as opts}]
+     (api-insert-new-block! content opts nil))
+    ([content {:keys [page last-block-uuid sibling? attributes]} on-block-inserted-fn]
+     (when (or page last-block-uuid)
     (let [sibling? (if page false sibling?)
           block (if page
                   (db/entity [:block/name (string/lower-case page)])
-                  (db/entity [:block/uuid block-uuid]))]
+                  (db/entity [:block/uuid last-block-uuid]))]
       (when block
         (let [repo (state/get-current-repo)
               last-block (when (not sibling?)
@@ -708,7 +709,11 @@
                                      nil)]
             (outliner-insert-block! {:skip-save-current-block? true} block-m new-block sibling?)
             (db/refresh! repo {:key :block/insert
-                               :data [(assoc block-m :block/page block)]})))))))
+                               :data [(assoc block-m :block/page block)]})
+            (when on-block-inserted-fn
+        (on-block-inserted-fn new-block)
+        ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
+              ))))))))
 
 (defn insert-first-page-block-if-not-exists!
   [page-name]
@@ -2245,7 +2250,7 @@
 
 (defn- append-block-tree-at-target
   ([tree new-block-uuids]
-   (append-block-tree-at-target tree exclude-properties nil))
+   (append-block-tree-at-target tree new-block-uuids nil))
   ([tree new-block-uuids get-pos-fn]
    (let [repo (state/get-current-repo)]
      (when-let [[target-block sibling? delete-editing-block? editing-block]
@@ -2263,25 +2268,27 @@
 
 ;; TODO merge common logic with append-block-tree-at-target and paste-block-tree-after-block
 (defn- paste-block-tree-after-block
-  [tree new-block-uuids last-block]
-  (let [repo (state/get-current-repo)]
-    (when-let [[target-block sibling? delete-editing-block? editing-block]
-               (get-block-tree-insert-pos-after-block last-block)]
-      (let [target-block (outliner-core/block target-block)
-            editing-block (outliner-core/block editing-block)
-            _ (outliner-core/save-node editing-block)
-            _ (outliner-core/insert-nodes tree target-block sibling?)
-            _ (when delete-editing-block?
-                (when-let [id (:db/id (outliner-core/get-data editing-block))]
-                  (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))
-            new-blocks (db/pull-many repo '[*] (map (fn [id] [:block/uuid id]) @new-block-uuids))]
-        (db/refresh! repo {:key :block/insert :data new-blocks})
-        (last tree)))))
+  ([tree new-block-uuids last-block]
+   (paste-block-tree-after-block tree new-block-uuids last-block nil))
+  ([tree new-block-uuids last-block get-pos-fn]
+   (let [repo (state/get-current-repo)]
+     (when-let [[target-block sibling? delete-editing-block? editing-block]
+                (get-block-tree-insert-pos-after-block last-block)]
+       (let [target-block (outliner-core/block target-block)
+             editing-block (outliner-core/block editing-block)
+             _ (outliner-core/save-node editing-block)
+             _ (outliner-core/insert-nodes tree target-block sibling?)
+             _ (when delete-editing-block?
+                 (when-let [id (:db/id (outliner-core/get-data editing-block))]
+                   (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))
+             new-blocks (db/pull-many repo '[*] (map (fn [id] [:block/uuid id]) @new-block-uuids))]
+         (db/refresh! repo {:key :block/insert :data new-blocks})
+         (last tree))))))
 
 (defn copy-paste-tree-at-target
   ([tree]
    (copy-paste-tree-at-target tree nil nil))
-  ([tree page-block get-pos-fn page-block]
+  ([tree get-pos-fn page-block]
   (let [page (or page-block
                  (:block/page (db/entity (:db/id (state/get-edit-block)))))
         file (:block/file page)
@@ -2316,20 +2323,20 @@
         tree-update-fn update-tree-to-step-outline
         content-update-fn (update-content-for-step-outline-fn properties-to-remove format (first template-tree))
         updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-    (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)))
+    (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
 
 (defn put-step-template-content-after-block
   ([last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn]
    (put-step-template-content-after-block last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn nil nil))
   ([last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn get-pos-fn page-block]
   (clogn [last-block template-tree exclude-properties format properties-to-remove])
-  (let [page (:block/page last-block)
+  (let [page (or page-block (:block/page last-block))
         file (:block/file page)
         new-block-uuids (atom #{})
         tree-update-fn update-tree-to-step-outline
         content-update-fn (update-content-for-step-outline-fn properties-to-remove format (first template-tree))
         updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-    (paste-block-tree-after-block updated-tree new-block-uuids last-block)
+    (paste-block-tree-after-block updated-tree new-block-uuids last-block get-pos-fn)
     (when on-block-inserted-fn
       (on-block-inserted-fn updated-tree)
       ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
@@ -2390,7 +2397,7 @@
         sibling? (if (=  target-block-id (:db/id page-block))
                    false
                    sibling?)]
-    (paste-block-vec-tree-at-target   ;; TODO replace by copy-paste-tree-at-target
+    (copy-paste-tree-at-target
       block-tree [] nil
       #(get-block-tree-insert-pos-after-target target-block-id sibling?)
       page-block)))
@@ -3064,8 +3071,7 @@
         tree* (->> tree
                    (mapv #(assoc % :level (- (:block/level %) prefix-level)))
                    (blocks-vec->tree))]
-    (paste-block-vec-tree-at-target tree* [])))  ;; TODO replace by copy-paste-tree-at-target
-    ;(copy-paste-tree-at-point tree*)))
+    (copy-paste-tree-at-target tree*)))
 
 (defn- paste-segmented-text
   [format text]
@@ -3095,9 +3101,7 @@
          (not (string/blank? text))
          (= (string/trim text) (string/trim (:copy/content copied-blocks))))
       (do
-        ;; copy from logseq internally
-        (paste-block-vec-tree-at-target copied-block-tree [])
-        ;TODO (copy-paste-tree-at-target copied-block-tree)
+        (copy-paste-tree-at-target copied-block-tree)
         (util/stop e))
 
       (do

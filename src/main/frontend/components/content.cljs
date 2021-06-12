@@ -139,7 +139,7 @@
   (rum/local "0.1" ::reward-for-answer)
   (rum/local "➕" ::step-icon)
   {:will-unmount (fn [state]
-                   (reset! *including-parent? nil)
+                   (reset! *template-including-parent? nil)
                    (reset! *first-answer-as-step-title? nil)
                    state)}
   [state block-id]
@@ -147,13 +147,13 @@
         step-name (get state ::step-name)
         reward-for-answer (get state ::reward-for-answer)
         step-icon (get state ::step-icon)
-        including-parent? (rum/react *including-parent?)
+        template-including-parent? (rum/react *template-including-parent?)
         first-answer-as-step-title? (rum/react *first-answer-as-step-title?)
         block-id (if (string? block-id) (uuid block-id) block-id)
         block (db/entity [:block/uuid block-id])
         has-children? (seq (:block/children block))]
-    (when (and (nil? including-parent?) has-children?)
-      (reset! *including-parent? true))
+    (when (and (nil? template-including-parent?) has-children?)
+      (reset! *template-including-parent? true))
 
     (if @edit?
       (do
@@ -195,7 +195,7 @@
                                         (when (true? first-answer-as-step-title?)
                                           (editor-handler/set-block-property! block-id :first-answer-to-title true))
                                         (editor-handler/set-block-property! block-id :reward-for-answer reward-value)
-                                        (when (false? including-parent?)
+                                        (when (false? template-including-parent?)
                                           (editor-handler/set-block-property! block-id :including-parent false))
                                         (state/hide-custom-context-menu!)))))))])
       (ui/menu-link

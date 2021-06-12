@@ -97,7 +97,7 @@
                 [:a.text-gray-400.ml-4 {:title "No worries, unlink this graph will clear its cache only, it does not remove your files on the disk."
                                         :on-click (fn []
                                                     (repo-handler/remove-repo! repo))}
-                 "Unlink"]]]))]]
+                 "Unlink"]]]))]
         (widgets/add-graph)))))
 
 (defn refresh-cb []

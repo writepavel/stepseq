@@ -164,7 +164,7 @@
           {:auto-focus true
            :on-change (fn [e]
                         (reset! step-name (util/evalue e)))}]
-         [:p "Step Icon. Copy from " [:a {:href "https://www.emojipedia.org" :target "_blank"} "emojipedia.org"]]
+         [:p "Step Icon. On Windows press '⊞ .' to find emojis. Or copy from " [:a {:href "https://www.emojipedia.org" :target "_blank"} "emojipedia.org"]]
          ;; <a href= "https://www.thesitewizard.com/" target= "_blank" >thesitewizard.com</a>
          [:input#new-template.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
           {:value @step-icon

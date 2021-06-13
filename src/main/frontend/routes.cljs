@@ -53,6 +53,10 @@
     {:name :new-steps
      :view page/new-steps}]
 
+   ["/templates"
+    {:name :templates
+     :view page/templates}]
+
    ["/summary"
     {:name :summary
      :view page/summary}]

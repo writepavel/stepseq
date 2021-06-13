@@ -522,9 +522,42 @@
     [:tr {:key step-block-id}
      [:td (ui/button step-name
                      :on-click (fn []
+                                 (page-handler/handle-focus-new-journal-line! 
+                                  (str step-name " <% today %> <% time %> ") step-block-id)
+                                ;;  (println " (page-handler/handle-focus-new-step! :step-template step-block-id) ")
+                                  ;;  (page-handler/handle-focus-new-step! :step-template step-block-id)
+                                 ))]
+    ;;  [:td step-block-id]
+     ])
+  )]]))])))
+
+(rum/defc templates < rum/reactive
+  ;; {:did-mount (fn [state]
+  ;;               (let [current-repo (state/sub :git/current-repo)]
+  ;;                 (js/setTimeout #(db/remove-orphaned-pages! current-repo) 0))
+  ;;               state)}
+  []
+  (let [current-repo (state/sub :git/current-repo)]
+    (rum/with-context [[t] i18n/*tongue-context*]
+      [:div.flex-1
+       [:h1.title (t :templates)]
+      ;;  [:p (str "Press button to make a new step")]
+       (when current-repo
+         (let [templates (editor-handler/get-all-templates)]
+
+           [:table.table-auto
+            ;; [:thead
+            ;;  [:tr [:th "Name"] [:th "Questions Block Id"] [:th "Page Title"]]]
+            [:tbody
+             (for [template templates]
+  (let [template-name (key template)
+        template-block-id (val template)]
+    [:tr {:key template-block-id}
+     [:td (ui/button template-name
+                     :on-click (fn []
                                 ;;  (page-handler/handle-focus-new-journal-line! (str step-name " <% today %> <% time %> "))
                                 ;;  (println " (page-handler/handle-focus-new-step! :step-template step-block-id) ")
-                                   (page-handler/handle-focus-new-step! :step-template step-block-id)
+                                   (page-handler/handle-focus-new-step! :general-template template-block-id)
                                  ))]
     ;;  [:td step-block-id]
      ])

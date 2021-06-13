@@ -1638,6 +1638,13 @@
   [q]
   (search/step-template-search q))
 
+(defn get-all-templates
+  []
+  (let [templates (db/get-all-templates)]
+    (when (seq templates)
+      (let [result (keys templates)]
+        (vec (select-keys templates result))))))
+
 (defn get-all-step-templates
   []
   (let [templates (db/get-all-step-templates)]
@@ -2266,82 +2273,20 @@
          (db/refresh! repo {:key :block/insert :data new-blocks})
          (last tree))))))
 
-;; TODO merge common logic with append-block-tree-at-target and paste-block-tree-after-block
-(defn- paste-block-tree-after-block
-  ([tree new-block-uuids last-block]
-   (paste-block-tree-after-block tree new-block-uuids last-block nil))
-  ([tree new-block-uuids last-block get-pos-fn]
-   (let [repo (state/get-current-repo)]
-     (when-let [[target-block sibling? delete-editing-block? editing-block]
-                (get-block-tree-insert-pos-after-block last-block)]
-       (let [target-block (outliner-core/block target-block)
-             editing-block (outliner-core/block editing-block)
-             _ (outliner-core/save-node editing-block)
-             _ (outliner-core/insert-nodes tree target-block sibling?)
-             _ (when delete-editing-block?
-                 (when-let [id (:db/id (outliner-core/get-data editing-block))]
-                   (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))
-             new-blocks (db/pull-many repo '[*] (map (fn [id] [:block/uuid id]) @new-block-uuids))]
-         (db/refresh! repo {:key :block/insert :data new-blocks})
-         (last tree))))))
-
 (defn copy-paste-tree-at-target
   ([tree]
    (copy-paste-tree-at-target tree nil nil))
   ([tree get-pos-fn page-block]
-  (let [page (or page-block
-                 (:block/page (db/entity (:db/id (state/get-edit-block)))))
-        file (:block/file page)
-        format (state/get-preferred-format)
-        new-block-uuids (atom #{})
-        tree-update-fn update-tree-metadata
-        content-update-fn (update-content-for-template-fn [] format)
-        updated-tree (tree-update-fn tree format [] page file new-block-uuids content-update-fn)]
-    (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
+   (let [page (or page-block
+                  (:block/page (db/entity (:db/id (state/get-edit-block)))))
+         file (:block/file page)
+         format (state/get-preferred-format)
+         new-block-uuids (atom #{})
+         tree-update-fn update-tree-metadata
+         content-update-fn (update-content-for-template-fn [] format)
+         updated-tree (tree-update-fn tree format [] page file new-block-uuids content-update-fn)]
+     (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
 
-(defn put-template-content-at-point
-  ([template-tree exclude-properties format properties-to-remove]
-   (put-template-content-at-point template-tree exclude-properties format properties-to-remove nil nil))
-  ([template-tree exclude-properties format properties-to-remove get-pos-fn page-block]
-  (let [page (or page-block
-                 (:block/page (db/entity (:db/id (state/get-edit-block)))))
-        file (:block/file page)
-        new-block-uuids (atom #{})
-        tree-update-fn update-tree-metadata
-        content-update-fn (update-content-for-template-fn properties-to-remove format)
-        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-    (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
-
-(defn put-step-template-content-at-point
-  ([template-tree exclude-properties format properties-to-remove]
-   (put-step-template-content-at-point template-tree exclude-properties format properties-to-remove nil nil))
-  ([template-tree exclude-properties format properties-to-remove get-pos-fn page-block]
-  (let [page (or page-block
-                 (:block/page (db/entity (:db/id (state/get-edit-block)))))
-        file (:block/file page)
-        new-block-uuids (atom #{})
-        tree-update-fn update-tree-to-step-outline
-        content-update-fn (update-content-for-step-outline-fn properties-to-remove format (first template-tree))
-        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-    (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
-
-(defn put-step-template-content-after-block
-  ([last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn]
-   (put-step-template-content-after-block last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn nil nil))
-  ([last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn get-pos-fn page-block]
-  (clogn [last-block template-tree exclude-properties format properties-to-remove])
-  (let [page (or page-block (:block/page last-block))
-        file (:block/file page)
-        new-block-uuids (atom #{})
-        tree-update-fn update-tree-to-step-outline
-        content-update-fn (update-content-for-step-outline-fn properties-to-remove format (first template-tree))
-        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-    (paste-block-tree-after-block updated-tree new-block-uuids last-block get-pos-fn)
-    (when on-block-inserted-fn
-      (on-block-inserted-fn updated-tree)
-      ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-      )
-    (last updated-tree))))
 
 (defn- tree->vec-tree
   "tree:
@@ -2360,12 +2305,12 @@
   [tree]
   (into []
         (mapcat
-          (fn [e]
-            (let [e* (select-keys e [:content :properties])]
-              (if-let [children (:children e)]
-                [e* (tree->vec-tree (:children e))]
-                [e*])))
-          tree)))
+         (fn [e]
+           (let [e* (select-keys e [:content :properties])]
+             (if-let [children (:children e)]
+               [e* (tree->vec-tree (:children e))]
+               [e*])))
+         tree)))
 
 (defn- vec-tree->vec-block-tree
   [tree format]
@@ -2428,9 +2373,9 @@
 
       (insert-command! id "" format {})
 
-      (let [last-block       (case template-type
-                               :general-template (put-template-content-at-point template-tree (into [template-property] properties-to-hide) format properties-to-remove)
-                               :step-template (put-step-template-content-at-point template-tree (into [template-property] properties-to-hide) format properties-to-remove))]
+      (let [last-block (case template-type
+                         :general-template (put-template-content-at-point template-tree (into [template-property] properties-to-hide) format properties-to-remove)
+                         :step-template (put-step-template-content-at-point template-tree (into [template-property] properties-to-hide) format properties-to-remove))]
 
         (clear-when-saved!)
         (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]})

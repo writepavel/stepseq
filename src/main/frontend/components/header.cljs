@@ -100,6 +100,11 @@
          {:title (t :new-steps)
           :options {:href (rfe/href :new-steps)}
           :icon svg/pages-sm})
+       
+       (when current-repo
+         {:title (t :templates)
+          :options {:href (rfe/href :templates)}
+          :icon svg/pages-sm})
 
        (when current-repo
          {:title (t :summary)

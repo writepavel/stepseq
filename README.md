@@ -37,6 +37,9 @@ Our top sponsors are shown below! [[Become a sponsor](https://opencollective.com
 <a href="https://www.deta.sh/" target="_blank"><img width=200 height=100 src="https://uploads-ssl.webflow.com/5eb96efa78dc680fc15be3be/5ebd24f6cbf6e9ebd674656e_Logo.svg" /></a>
 
 
+## Plugins documentation (Draft)
+The plugins documentation is at https://logseq.github.io/plugins. Any feedback would be greatly appreciated!
+
 ## Feature requests
 
 Please go to https://discuss.logseq.com/c/feature-requests/7.
@@ -92,6 +95,7 @@ We also have [a dedicated page](https://github.com/logseq/logseq/blob/master/COD
 
 ```bash
 git clone https://github.com/logseq/logseq
+cd logseq
 yarn
 yarn watch
 ```

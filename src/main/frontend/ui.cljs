@@ -17,7 +17,8 @@
             [medley.core :as medley]
             [frontend.ui.date-picker]
             [frontend.context.i18n :as i18n]
-            [frontend.modules.shortcut.core :as shortcut]))
+            [frontend.modules.shortcut.core :as shortcut]
+            [lambdaisland.glogi :as log]))
 
 (defonce transition-group (r/adapt-class TransitionGroup))
 (defonce css-transition (r/adapt-class CSSTransition))
@@ -101,7 +102,7 @@
                      [:div {:style {:margin-right "8px"}} title]
                       ;; [:div {:style {:position "absolute" :right "8px"}}
                       ;;  icon]
-]]
+                     ]]
           (rum/with-key
             (menu-link new-options child)
             title)))
@@ -331,30 +332,42 @@
 (rum/defcs auto-complete <
   (rum/local 0 ::current-idx)
   (shortcut/mixin :shortcut.handler/auto-complete)
-  [state matched {:keys [on-chosen
-                         on-shift-chosen
-                         on-enter
-                         empty-div
-                         item-render
-                         class]}]
+  [state
+   matched
+   {:keys [on-chosen
+           on-shift-chosen
+           get-group-name
+           empty-div
+           item-render
+           class]}]
   (let [current-idx (get state ::current-idx)]
     [:div#ui__ac {:class class}
      (if (seq matched)
        [:div#ui__ac-inner.hide-scrollbar
         (for [[idx item] (medley/indexed matched)]
-          (rum/with-key
-            (menu-link
-             {:id       (str "ac-" idx)
-              :class    (when (= @current-idx idx)
-                          "chosen")
-              ;; :tab-index -1
-              :on-mouse-down (fn [e]
-                               (util/stop e)
-                               (if (and (gobj/get e "shiftKey") on-shift-chosen)
-                                 (on-shift-chosen item)
-                                 (on-chosen item)))}
-             (if item-render (item-render item) item))
-            idx))]
+          [:<>
+           {:key idx}
+           (let [item-cp
+                 [:div {:key idx}
+                  (menu-link
+                   {:id       (str "ac-" idx)
+                    :class    (when (= @current-idx idx)
+                                "chosen")
+                    :on-mouse-down (fn [e]
+                                     (util/stop e)
+                                     (if (and (gobj/get e "shiftKey") on-shift-chosen)
+                                       (on-shift-chosen item)
+                                       (on-chosen item)))}
+                   (if item-render (item-render item) item))]]
+
+             (if get-group-name
+               (if-let [group-name (get-group-name item)]
+                 [:div
+                  [:div.ui__ac-group-name group-name]
+                  item-cp]
+                 item-cp)
+
+               item-cp))])]
        (when empty-div
          empty-div))]))
 
@@ -372,15 +385,19 @@
       {:class       (if on? (if small? "translate-x-4" "translate-x-5") "translate-x-0")
        :aria-hidden "true"}]]]))
 
+(defn apply-close-fn [close-fn]
+  (fn [] (apply (or (gobj/get close-fn "user-close") close-fn) [])))
+
 (defonce modal-show? (atom false))
 (rum/defc modal-overlay
-  [state]
+  [state close-fn]
   [:div.ui__modal-overlay
    {:class (case state
              "entering" "ease-out duration-300 opacity-0"
              "entered" "ease-out duration-300 opacity-100"
              "exiting" "ease-in duration-200 opacity-100"
-             "exited" "ease-in duration-200 opacity-0")}
+             "exited" "ease-in duration-200 opacity-0")
+    :on-click (apply-close-fn close-fn)}
    [:div.absolute.inset-0.opacity-75]])
 
 (rum/defc modal-panel
@@ -395,7 +412,7 @@
     [:button.ui__modal-close
      {:aria-label "Close"
       :type       "button"
-      :on-click   (fn [] (apply (or (gobj/get close-fn "user-close") close-fn) []))}
+      :on-click   close-fn}
      [:svg.h-6.w-6
       {:stroke "currentColor", :view-box "0 0 24 24", :fill "none"}
       [:path
@@ -435,7 +452,7 @@
      (css-transition
       {:in show? :timeout 0}
       (fn [state]
-        (modal-overlay state)))
+        (modal-overlay state close-fn)))
      (css-transition
       {:in show? :timeout 0}
       (fn [state]
@@ -566,6 +583,9 @@
        (js/console.dir error)
        (assoc state ::error error))}
   [{error ::error, c :rum/react-component} error-view view]
+  (when error
+    (js/console.error error)
+    (log/error :ui/catch-error error))
   (if (some? error)
     error-view
     view))
@@ -601,6 +621,9 @@
                    :onHide #(reset! *mounted? false)}
                   opts)
            (assoc :html (if mounted?
-                          (:html opts)
+                          (when-let [html (:html opts)]
+                            (if (fn? html)
+                              (html)
+                              html))
                           [:div ""])))
           child)))

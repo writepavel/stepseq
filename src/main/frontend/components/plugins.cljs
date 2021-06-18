@@ -133,6 +133,11 @@
         selected-unpacked-pkg (state/sub :plugin/selected-unpacked-pkg)]
     [:div.cp__plugins-page-installed
      [:h1 "Installed Plugins"]
+     (ui/admonition
+      :warning
+      [:div {:style {:max-width 700}}
+       "Plugins can access your graph and your local files, issue network requests. They can also cause data corruption or loss. We're working on proper access rules for your graphs. Meanwhile, make sure you have regular backups of your graphs and only install the plugins when you can read and understand the source code."])
+     [:hr]
      [:div.mb-6.flex.items-center.justify-between
       (ui/button
        "Load unpacked plugin"

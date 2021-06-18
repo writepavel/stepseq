@@ -342,16 +342,19 @@
     :href href
     :on-click (fn [e]
                 (util/stop e)
-                (editor-handler/insert-first-page-block-if-not-exists! redirect-page-name)
                 (if (gobj/get e "shiftKey")
-                  (when-let [page-entity (db/entity [:block/name redirect-page-name])]
-                    (state/sidebar-add-block!
-                     (state/get-current-repo)
-                     (:db/id page-entity)
-                     :page
-                     {:page page-entity}))
-                  (route-handler/redirect! {:to :page
-                                            :path-params {:name redirect-page-name}}))
+                  (do
+                    (js/setTimeout #(editor-handler/insert-first-page-block-if-not-exists! redirect-page-name) 310)
+                    (when-let [page-entity (db/entity [:block/name redirect-page-name])]
+                     (state/sidebar-add-block!
+                      (state/get-current-repo)
+                      (:db/id page-entity)
+                      :page
+                      {:page page-entity})))
+                  (do
+                    (editor-handler/insert-first-page-block-if-not-exists! redirect-page-name)
+                    (route-handler/redirect! {:to :page
+                                             :path-params {:name redirect-page-name}})))
                 (when (and contents-page?
                            (state/get-left-sidebar-open?))
                   (ui-handler/close-left-sidebar!)))}
@@ -362,7 +365,7 @@
          (last child)
          (let [{:keys [content children]} (last child)
                page-name (subs content 2 (- (count content) 2))]
-           (page-reference html-export? page-name (assoc config :children children) nil))))
+           (rum/with-key (page-reference html-export? page-name (assoc config :children children) nil) page-name))))
      (if (and label
               (string? label)
               (not (string/blank? label))) ; alias
@@ -386,26 +389,28 @@
 
                                :else
                                page)
+          page-original-name (model/get-page-original-name redirect-page-name)
           href (if html-export?
                  (util/encode-str page)
                  (rfe/href :page {:name redirect-page-name}))
           inner (page-inner config page-name href redirect-page-name page-entity contents-page? children html-export? label)]
       (if (and (not (util/mobile?)) (not preview?))
-        (ui/tippy {:html        [:div.tippy-wrapper.overflow-y-auto.p-4
-                                 {:style {:width          735
-                                          :text-align     "left"
-                                          :font-weight    500
-                                          :max-height     600
-                                          :padding-bottom 64}}
-                                 [:h2.font-bold.text-lg (if (= page redirect-page-name)
-                                                          page
-                                                          [:span
-                                                           [:span.text-sm.mr-2 "Alias:" ]
-                                                           redirect-page-name])]
-                                 (let [page (db/entity [:block/name (string/lower-case redirect-page-name)])]
-                                   (editor-handler/insert-first-page-block-if-not-exists! redirect-page-name)
-                                   (when-let [f (state/get-page-blocks-cp)]
-                                     (f (state/get-current-repo) page {:sidebar? sidebar? :preview? true})))]
+        (ui/tippy {:html        (fn []
+                                  [:div.tippy-wrapper.overflow-y-auto.p-4
+                                   {:style {:width          735
+                                            :text-align     "left"
+                                            :font-weight    500
+                                            :max-height     600
+                                            :padding-bottom 64}}
+                                   [:h2.font-bold.text-lg (if (= page redirect-page-name)
+                                                            page-original-name
+                                                            [:span
+                                                             [:span.text-sm.mr-2 "Alias:"]
+                                                             page-original-name])]
+                                   (let [page (db/entity [:block/name (string/lower-case redirect-page-name)])]
+                                     (editor-handler/insert-first-page-block-if-not-exists! redirect-page-name)
+                                     (when-let [f (state/get-page-blocks-cp)]
+                                       (f (state/get-current-repo) page {:sidebar? sidebar? :preview? true})))])
                    :interactive true
                    :delay       [1000, 100]}
                   inner)
@@ -421,6 +426,7 @@
      (case (util/get-file-ext full-path)
        "pdf"
        [:iframe {:src full-path
+                 :class "pdf-preview"
                  :fullscreen true
                  :height 800}]
        ;; https://en.wikipedia.org/wiki/HTML5_video
@@ -560,11 +566,12 @@
                          (map-inline config label))
                        title)]
            (if (and (not (util/mobile?)) (not (:preview? config)))
-             (ui/tippy {:html        [:div.tippy-wrapper.overflow-y-auto.p-4
-                                      {:style {:width      735
-                                               :text-align "left"
-                                               :max-height 600}}
-                                      (blocks-container [block] (assoc config :preview? true))]
+             (ui/tippy {:html        (fn []
+                                       [:div.tippy-wrapper.overflow-y-auto.p-4
+                                        {:style {:width      735
+                                                 :text-align "left"
+                                                 :max-height 600}}
+                                        (blocks-container [block] (assoc config :preview? true))])
                         :interactive true
                         :delay       [1000, 100]} inner)
              inner))]
@@ -1274,8 +1281,7 @@
         priority (priority-cp t)
         tags (block-tags-cp t)
         bg-color (:background-color properties)
-        heading-level (or (and (false? unordered)
-                               heading-level
+        heading-level (or (and heading-level
                                (<= heading-level 6)
                                heading-level)
                           (and (get properties :heading)
@@ -1568,11 +1574,11 @@
                     :heading-level heading-level
                     :on-hide (fn [value event]
                                (when (= event :esc)
-                                 (editor-handler/select-block! uuid)))}
+                                 (editor-handler/escape-editing)))}
                    edit-input-id
                    config)]
       [:div.flex.flex-row.block-content-wrapper
-       [:div.flex-1 {:style {:display (if (:slide? config) "block" "flex")}}
+       [:div.flex-1.w-full {:style {:display (if (:slide? config) "block" "flex")}}
         (block-content config block edit-input-id block-id slide?)]
        [:div.flex.flex-row
         (when (and (:embed? config)
@@ -1825,7 +1831,7 @@
 
      (dnd-separator-wrapper block slide? top?)
 
-     [:div.flex.flex-row {:class (if heading? "items-center" "")}
+     [:div.flex.flex-row.pr-2 {:class (if heading? "items-center" "")}
       (when (not slide?)
         (block-control config block uuid block-id body children collapsed? *ref-collapsed? *control-show?))
 

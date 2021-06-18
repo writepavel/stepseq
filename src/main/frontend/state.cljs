@@ -429,7 +429,7 @@
      ;;                        (remove #(= leader-parent %)))]
      ;;     (prn "followers: " (count followers))
      ;;     ))
-)))
+     )))
 
 (defn get-edit-input-id
   []
@@ -555,6 +555,7 @@
             :selection/mode true
             :selection/blocks blocks
             :selection/direction direction))))
+
 (defn into-selection-mode!
   []
   (swap! state assoc :selection/mode true))
@@ -572,7 +573,7 @@
 
 (defn get-selection-blocks
   []
-  (:selection/blocks @state))
+  (util/sort-by-height (:selection/blocks @state)))
 
 (defn in-selection-mode?
   []
@@ -679,7 +680,7 @@
                                         ; FIXME: No need to call `distinct`?
                                           (distinct))))
     (open-right-sidebar!)
-    (when-let [elem (gdom/getElementByClass "cp__right-sidebar-scollable")]
+    (when-let [elem (gdom/getElementByClass "cp__right-sidebar-scrollable")]
       (util/scroll-to elem 0))))
 
 (defn sidebar-remove-block!
@@ -1059,6 +1060,12 @@
        :ui/enable-tooltip?
        true))
 
+(defn show-command-doc?
+  []
+  (get (get (sub-config) (get-current-repo))
+       :ui/show-command-doc?
+       true))
+
 (defn set-config!
   [repo-url value]
   (set-state! [:config repo-url] value))
@@ -1318,11 +1325,12 @@
   ([blocks]
    (exit-editing-and-set-selected-blocks! blocks :down))
   ([blocks direction]
-   (util/clear-selection!)
+   (util/select-unhighlight! (dom/by-class "selected"))
+   (clear-selection!)
    (clear-edit!)
    (set-selection-blocks! blocks direction)
    (util/select-highlight! blocks)))
 
 (defn get-favorites-name
   []
-  (:name/favorites (get-config)))
+  (or (:name/favorites (get-config)) "Favorites"))

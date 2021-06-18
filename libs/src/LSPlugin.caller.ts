@@ -225,7 +225,7 @@ class LSPluginCaller extends EventEmitter {
 
         this._callUserModel = async (type, payload: any) => {
           if (type.startsWith(FLAG_AWAIT)) {
-            // TODO: attach payload
+            // TODO: attach payload with method call
             return await refChild.get(type.replace(FLAG_AWAIT, ''))
           } else {
             refChild.call(type, payload)

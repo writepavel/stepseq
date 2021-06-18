@@ -69,8 +69,9 @@
 (defn create!
   ([title]
    (create! title {}))
-  ([title {:keys [redirect? page-map]
-           :or {redirect? true}}]
+  ([title {:keys [redirect? page-map create-first-block?]
+           :or {redirect? true
+                create-first-block? true}}]
    (let [title (string/trim title)
          page (string/lower-case title)
          format (state/get-preferred-format)
@@ -87,7 +88,8 @@
                [tx default-properties]
                [tx])]
      (db/transact! txs)
-     (editor-handler/insert-first-page-block-if-not-exists! page)
+     (when create-first-block?
+       (editor-handler/insert-first-page-block-if-not-exists! page))
      (when redirect?
       (route-handler/redirect! {:to :page
                                 :path-params {:name page}})))))
@@ -443,7 +445,7 @@
     (editor-handler/api-insert-new-block!
      content
      {:page "Contents"})
-    (notification/show! "Added to contents!" :success)
+    (notification/show! (util/format "Added to %s!" (state/get-favorites-name)) :success)
     (editor-handler/clear-when-saved!)))
 
 (defn has-more-journals?

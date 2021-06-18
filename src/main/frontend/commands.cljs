@@ -112,91 +112,17 @@
       (mapv (fn [level]
               (let [heading (str "h" level)]
                 [heading (->heading (apply str (repeat level "#")))])) (range 1 7)))))
-(defn commands-map
-  [get-page-ref-text]
-  (->>
-   (concat
-    (get-preferred-workflow)
-    [["DONE" (->marker "DONE")]
-     ;; ["WAIT" (->marker "WAIT")]
-     ;; ["IN-PROGRESS" (->marker "IN-PROGRESS")]
-     ["A" (->priority "A")]
-     ["B" (->priority "B")]
-     ["C" (->priority "C")]
-     ["Deadline" [[:editor/clear-current-slash]
-                  [:editor/show-date-picker :deadline]]]
-     ["Scheduled" [[:editor/clear-current-slash]
-                   [:editor/show-date-picker :scheduled]]]
-     ["Query" [[:editor/input "{{query }}" {:backward-pos 2}]]]
-     ["Draw" (fn []
-               (let [file (draw/file-name)
-                     path (str config/default-draw-directory "/" file)
-                     text (util/format "[[%s]]" path)]
-                 (p/let [_ (draw/create-draw-with-default-content path)]
-                   (println "draw file created, " path))
-                 text))]
-     ["WAITING" (->marker "WAITING")]
-     ["CANCELED" (->marker "CANCELED")]
-     ["Tomorrow" #(get-page-ref-text (date/tomorrow))]
-     ["Yesterday" #(get-page-ref-text (date/yesterday))]
-     ["Today" #(get-page-ref-text (date/today))]
-     ["Current Time" #(date/get-current-time)]
-     ["Date Picker" [[:editor/show-date-picker]]]
-     ["Page Reference" [[:editor/input "[[]]" {:backward-pos 2}]
-                        [:editor/search-page]]]
-     ["Page Embed" (embed-page)]
-     ["Block Reference" [[:editor/input "(())" {:backward-pos 2}]
-                         [:editor/search-block :reference]]]
-     ["Block Embed" (embed-block)]
-     ["Link" link-steps]
-     ["Step" step-command]
-     ["Template" [[:editor/input "/" nil]
-                  [:editor/search-template]]]
-     ;; same as link
-     ["Image Link" link-steps]
-     (cond
-       (and (util/electron?) (config/local-db? (state/get-current-repo)))
-
-       ["Upload an asset (image, pdf, docx, etc.)" [[:editor/click-hidden-file-input :id]]]
-
-       (state/logged?)
-       ["Upload an image" [[:editor/click-hidden-file-input :id]]])
-
-     (when (util/zh-CN-supported?)
-       ["Embed Bilibili Video" [[:editor/input "{{bilibili }}" {:last-pattern slash
-                                                                :backward-pos 2}]]])
-
-     ["Embed Youtube Video" [[:editor/input "{{youtube }}" {:last-pattern slash
-                                                            :backward-pos 2}]]]
-
-     ["Embed Vimeo Video" [[:editor/input "{{vimeo }}" {:last-pattern slash
-                                                        :backward-pos 2}]]]
-
-     (when (state/markdown?)
-       ["Underline" [[:editor/input "<ins></ins>"
-                      {:last-pattern slash
-                       :backward-pos 6}]]])
-
-     ["Html Inline " (->inline "html")]
-
-     ;; TODO:
-     ;; ["Upload a file" nil]
-]
-    (markdown-headings)
-    ;; Allow user to modify or extend, should specify how to extend.
-    (state/get-commands)
-    (state/get-plugins-commands))
-   (remove nil?)
-   (util/distinct-by-last-wins first)))
 
 (defonce *matched-commands (atom nil))
 (defonce *initial-commands (atom nil))
 
-(defn init-commands!
-  [get-page-ref-text]
-  (let [commands (commands-map get-page-ref-text)]
-    (reset! *initial-commands commands)
-    (reset! *matched-commands commands)))
+(defonce *first-command-group
+  {"Page Reference" "BASIC"
+   "Tomorrow" "TIME & DATE"
+   "LATER" "TASK"
+   "A" "PRIORITY"
+   "Query" "ADVANCED"
+   "Quote" "ORG-MODE"})
 
 (defn ->block
   ([type]
@@ -264,6 +190,93 @@
     (state/get-commands))
    (remove nil?)
    (util/distinct-by-last-wins first)))
+
+(defn commands-map
+  [get-page-ref-text]
+  (->>
+   (concat
+    ;; basic
+    [["Page Reference" [[:editor/input "[[]]" {:backward-pos 2}]
+                        [:editor/search-page]] "Create a backlink to a page"]
+     ["Page Embed" (embed-page) "Embed a page here"]
+     ["Block Reference" [[:editor/input "(())" {:backward-pos 2}]
+                         [:editor/search-block :reference]] "Create a backlink to a blcok"]
+     ["Block Embed" (embed-block) "Embed a block here" "Embed a block here"]
+     ["Link" link-steps "Create a HTTP link"]
+     ["Image Link" link-steps "Create a HTTP link to a image"]
+     (when (state/markdown?)
+       ["Underline" [[:editor/input "<ins></ins>"
+                      {:last-pattern slash
+                       :backward-pos 6}]] "Create a underline text decoration"])
+     ["Step" step-command]
+     ["Template" [[:editor/input "/" nil]
+                  [:editor/search-template]] "Insert a created template here"]
+     (cond
+       (and (util/electron?) (config/local-db? (state/get-current-repo)))
+
+       ["Upload an asset" [[:editor/click-hidden-file-input :id]] "Upload file types like image, pdf, docx, etc.)"]
+
+       (state/logged?)
+       ["Upload an image" [[:editor/click-hidden-file-input :id]]])]
+
+    (markdown-headings)
+
+    ;; time & date
+
+    [["Tomorrow" #(get-page-ref-text (date/tomorrow)) "Insert the date of tomorrow"]
+     ["Yesterday" #(get-page-ref-text (date/yesterday)) "Insert the date of yesterday"]
+     ["Today" #(get-page-ref-text (date/today)) "Insert the date of today"]
+     ["Current Time" #(date/get-current-time) "Insert current time"]
+     ["Date Picker" [[:editor/show-date-picker]] "Pick a date and insert here"]]
+
+    ;; task management
+    (get-preferred-workflow)
+
+    [["DONE" (->marker "DONE")]
+     ["WAITING" (->marker "WAITING")]
+     ["CANCELED" (->marker "CANCELED")]
+     ["Deadline" [[:editor/clear-current-slash]
+                  [:editor/show-date-picker :deadline]]]
+     ["Scheduled" [[:editor/clear-current-slash]
+                   [:editor/show-date-picker :scheduled]]]]
+
+    ;; priority
+    [["A" (->priority "A")]
+     ["B" (->priority "B")]
+     ["C" (->priority "C")]]
+
+    ;; advanced
+
+    [["Query" [[:editor/input "{{query }}" {:backward-pos 2}]] "Create a DataScript query"]
+     ["Draw" (fn []
+               (let [file (draw/file-name)
+                     path (str config/default-draw-directory "/" file)
+                     text (util/format "[[%s]]" path)]
+                 (p/let [_ (draw/create-draw-with-default-content path)]
+                   (println "draw file created, " path))
+                 text)) "Draw a graph with Excalidraw"]
+
+     (when (util/zh-CN-supported?)
+       ["Embed Bilibili Video" [[:editor/input "{{bilibili }}" {:last-pattern slash
+                                                                :backward-pos 2}]]])
+     ["Embed HTML " (->inline "html")]
+
+     ["Embed Youtube Video" [[:editor/input "{{youtube }}" {:last-pattern slash
+                                                            :backward-pos 2}]]]
+
+     ["Embed Vimeo Video" [[:editor/input "{{vimeo }}" {:last-pattern slash
+                                                        :backward-pos 2}]]]]
+
+    ;; Allow user to modify or extend, should specify how to extend.
+    (state/get-commands))
+   (remove nil?)
+   (util/distinct-by-last-wins first)))
+
+(defn init-commands!
+  [get-page-ref-text]
+  (let [commands (commands-map get-page-ref-text)]
+    (reset! *initial-commands commands)
+    (reset! *matched-commands commands)))
 
 (defonce *matched-block-commands (atom (block-commands-map)))
 
@@ -499,16 +512,12 @@
   (when-let [input-id (state/get-edit-input-id)]
     (when-let [current-input (gdom/getElement input-id)]
       (let [edit-content (gobj/get current-input "value")
-            slash-pos (:pos @*slash-caret-pos)
-            heading-pattern  #"^#\+"
-            prefix (subs edit-content 0 (dec slash-pos))
-            pos (count (util/safe-re-find heading-pattern prefix))
+            heading-pattern #"^#+\s+"
             new-value (cond
-                        (util/safe-re-find heading-pattern prefix)
-                        (str (subs edit-content 0 pos)
-                             (string/replace-first (subs edit-content pos)
-                                                   heading-pattern
-                                                   heading))
+                        (util/safe-re-find heading-pattern edit-content)
+                        (string/replace-first edit-content
+                                              heading-pattern
+                                              (str heading " "))
                         :else
                         (str heading " " (string/triml edit-content)))]
         (state/set-edit-content! input-id new-value)))))

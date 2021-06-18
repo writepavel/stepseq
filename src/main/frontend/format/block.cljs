@@ -12,7 +12,8 @@
             [frontend.util.property :as property]
             [medley.core :as medley]
             [frontend.state :as state]
-            [frontend.db :as db]))
+            [frontend.db :as db]
+            [lambdaisland.glogi :as log]))
 
 (defn heading-block?
   [block]
@@ -35,7 +36,12 @@
                  (or
                   (and
                    (= typ "Search")
-                   ;; FIXME: alert error
+                   (string? (second (:url (second block))))
+                   (text/page-ref? (second (:url (second block))))
+                   (text/page-ref-un-brackets! (second (:url (second block)))))
+
+                  (and
+                   (= typ "Search")
                    (not (contains? #{\# \* \/ \[} (first (second (:url (second block))))))
                    (let [page (second (:url (second block)))
                          ext (some-> (util/get-file-ext page) keyword)]
@@ -377,14 +383,15 @@
   (some (fn [x] (and (vector? x) (= "Src" (first x)))) (:body block)))
 
 (defn- get-block-content
-  [utf8-content block format]
+  [utf8-content block format block-content]
   (let [meta (:meta block)
-        content (if-let [end-pos (:end-pos meta)]
-                  (utf8/substring utf8-content
-                                  (:start-pos meta)
-                                  end-pos)
-                  (utf8/substring utf8-content
-                                  (:start-pos meta)))
+        content (or block-content
+                    (if-let [end-pos (:end-pos meta)]
+                      (utf8/substring utf8-content
+                                      (:start-pos meta)
+                                      end-pos)
+                      (utf8/substring utf8-content
+                                      (:start-pos meta))))
         content-orig content]
     (let [content (when content
                     (let [content (text/remove-level-spaces content format)]
@@ -418,126 +425,132 @@
 
 (defn extract-blocks
   [blocks content with-id? format]
-  (let [encoded-content (utf8/encode content)
-        last-pos (utf8/length encoded-content)
-        pre-block-body (atom nil)
-        pre-block-properties (atom nil)
-        blocks
-        (loop [headings []
-               block-body []
-               blocks (reverse blocks)
-               timestamps {}
-               properties {}
-               last-pos last-pos
-               last-level 1000
-               children []]
-          (if (seq blocks)
-            (let [[block {:keys [start_pos end_pos]}] (first blocks)
-                  unordered? (:unordered (second block))
-                  markdown-heading? (and (false? unordered?) (= :markdown format))]
-              (cond
-                (paragraph-timestamp-block? block)
-                (let [timestamps (extract-timestamps block)
-                      timestamps' (merge timestamps timestamps)
-                      other-body (->> (second block)
-                                      (drop-while #(= ["Break_Line"] %)))]
-                  (recur headings (conj block-body ["Paragraph" other-body]) (rest blocks) timestamps' properties last-pos last-level children))
+  (try
+    (let [encoded-content (utf8/encode content)
+         last-pos (utf8/length encoded-content)
+         pre-block-body (atom nil)
+         pre-block-properties (atom nil)
+         blocks
+         (loop [headings []
+                block-body []
+                blocks (reverse blocks)
+                timestamps {}
+                properties {}
+                last-pos last-pos
+                last-level 1000
+                children []
+                block-all-content []]
+           (if (seq blocks)
+             (let [[block {:keys [start_pos end_pos] :as block-content}] (first blocks)
+                   block-content (when (string? block-content) block-content)
+                   unordered? (:unordered (second block))
+                   markdown-heading? (and (:size (second block)) (= :markdown format))]
+               (cond
+                 (paragraph-timestamp-block? block)
+                 (let [timestamps (extract-timestamps block)
+                       timestamps' (merge timestamps timestamps)
+                       other-body (->> (second block)
+                                       (drop-while #(= ["Break_Line"] %)))]
+                   (recur headings (conj block-body ["Paragraph" other-body]) (rest blocks) timestamps' properties last-pos last-level children (conj block-all-content block-content)))
 
-                (property/properties-ast? block)
-                (let [properties (extract-properties (second block))]
-                  (recur headings block-body (rest blocks) timestamps properties last-pos last-level children))
+                 (property/properties-ast? block)
+                 (let [properties (extract-properties (second block))]
+                   (recur headings block-body (rest blocks) timestamps properties last-pos last-level children (conj block-all-content block-content)))
 
-                (heading-block? block)
-                (let [id (or (when-let [custom-id (or (get-in properties [:properties :custom-id])
-                                                      (get-in properties [:properties :custom_id])
-                                                      (get-in properties [:properties :id]))]
-                               (let [custom-id (string/trim custom-id)]
-                                 (when (util/uuid-string? custom-id)
-                                   (uuid custom-id))))
-                             (db/new-block-id))
-                      ref-pages-in-properties (->> (:page-refs properties)
-                                                   (remove string/blank?))
-                      block (second block)
-                      block (if markdown-heading?
-                              (assoc block
-                                     :type :heading
-                                     :level 1
-                                     :heading-level (:level block))
-                              block)
-                      level (:level block)
-                      [children current-block-children]
-                      (cond
-                        (< level last-level)
-                        (let [current-block-children (set (->> (filter #(< level (second %)) children)
-                                                               (map first)
-                                                               (map (fn [id]
-                                                                      [:block/uuid id]))))
-                              others (vec (remove #(< level (second %)) children))]
-                          [(conj others [id level])
-                           current-block-children])
+                 (heading-block? block)
+                 (let [id (or (when-let [custom-id (or (get-in properties [:properties :custom-id])
+                                                       (get-in properties [:properties :custom_id])
+                                                       (get-in properties [:properties :id]))]
+                                (let [custom-id (and (string? custom-id) (string/trim custom-id))]
+                                  (when (and custom-id (util/uuid-string? custom-id))
+                                    (uuid custom-id))))
+                              (db/new-block-id))
+                       ref-pages-in-properties (->> (:page-refs properties)
+                                                    (remove string/blank?))
+                       block (second block)
+                       block (if markdown-heading?
+                               (assoc block
+                                      :type :heading
+                                      :level (if unordered? (:level block) 1)
+                                      :heading-level (or (:size block) 6))
+                               block)
+                       level (:level block)
+                       [children current-block-children]
+                       (cond
+                         (< level last-level)
+                         (let [current-block-children (set (->> (filter #(< level (second %)) children)
+                                                                (map first)
+                                                                (map (fn [id]
+                                                                       [:block/uuid id]))))
+                               others (vec (remove #(< level (second %)) children))]
+                           [(conj others [id level])
+                            current-block-children])
 
-                        (>= level last-level)
-                        [(conj children [id level])
-                         #{}])
+                         (>= level last-level)
+                         [(conj children [id level])
+                          #{}])
 
-                      block (-> (assoc block
-                                       :uuid id
-                                       :body (vec
-                                              (->> (reverse block-body)
-                                                   (map #(remove-indentations format (:level block) %))))
-                                       :properties (:properties properties)
-                                       :refs ref-pages-in-properties
-                                       :children (or current-block-children [])
-                                       :format format)
-                                (assoc-in [:meta :start-pos] start_pos)
-                                (assoc-in [:meta :end-pos] last-pos)
-                                ((fn [block]
-                                   (assoc block
-                                          :content (get-block-content encoded-content block format)))))
-                      block (if (seq timestamps)
-                              (merge block (timestamps->scheduled-and-deadline timestamps))
-                              block)
-                      block (-> block
-                                (with-page-refs with-id?)
-                                with-block-refs
-                                block-tags->pages)
-                      last-pos' (get-in block [:meta :start-pos])]
-                  (recur (conj headings block) [] (rest blocks) {} {} last-pos' (:level block) children))
+                       block (-> (assoc block
+                                        :uuid id
+                                        :body (vec
+                                               (->> (reverse block-body)
+                                                    (map #(remove-indentations format (:level block) %))))
+                                        :properties (:properties properties)
+                                        :refs ref-pages-in-properties
+                                        :children (or current-block-children [])
+                                        :format format)
+                                 (assoc-in [:meta :start-pos] start_pos)
+                                 (assoc-in [:meta :end-pos] last-pos)
+                                 ((fn [block]
+                                    (assoc block
+                                           :content (get-block-content encoded-content block format (and block-content (string/join "\n" (reverse (conj block-all-content block-content)))))))))
+                       block (if (seq timestamps)
+                               (merge block (timestamps->scheduled-and-deadline timestamps))
+                               block)
+                       block (-> block
+                                 (with-page-refs with-id?)
+                                 with-block-refs
+                                 block-tags->pages)
+                       last-pos' (get-in block [:meta :start-pos])]
+                   (recur (conj headings block) [] (rest blocks) {} {} last-pos' (:level block) children []))
 
-                :else
-                (let [block-body' (conj block-body block)]
-                  (recur headings block-body' (rest blocks) timestamps properties last-pos last-level children))))
-            (do
-              (when (seq block-body)
-                (reset! pre-block-body (reverse block-body)))
-              (when (seq properties)
-                (let [properties (:properties properties)]
-                  (reset! pre-block-properties properties)))
-              (-> (reverse headings)
-                  safe-blocks))))]
-    (let [first-block (first blocks)
-          first-block-start-pos (get-in first-block [:block/meta :start-pos])
-          blocks (if (or (seq @pre-block-body)
-                         (seq @pre-block-properties))
-                   (cons
-                    (merge
-                     (let [content (utf8/substring encoded-content 0 first-block-start-pos)]
-                       (->
-                        {:uuid (db/new-block-id)
-                         :content content
-                         :level 1
-                         :meta {:start-pos 0
-                                :end-pos (or first-block-start-pos
-                                             (utf8/length encoded-content))}
-                         :body @pre-block-body
-                         :properties @pre-block-properties
-                         :pre-block? true
-                         :unordered true}
-                        (block-keywordize)))
-                     (select-keys first-block [:block/file :block/format :block/page]))
-                    blocks)
-                   blocks)]
-      (with-path-refs blocks))))
+                 :else
+                 (let [block-body' (conj block-body block)]
+                   (recur headings block-body' (rest blocks) timestamps properties last-pos last-level children (conj block-all-content block-content)))))
+             (do
+               (when (seq block-body)
+                 (reset! pre-block-body (reverse block-body)))
+               (when (seq properties)
+                 (let [properties (:properties properties)]
+                   (reset! pre-block-properties properties)))
+               (-> (reverse headings)
+                   safe-blocks))))]
+     (let [first-block (first blocks)
+           first-block-start-pos (get-in first-block [:block/meta :start-pos])
+           blocks (if (or (seq @pre-block-body)
+                          (seq @pre-block-properties))
+                    (cons
+                     (merge
+                      (let [content (utf8/substring encoded-content 0 first-block-start-pos)]
+                        (->
+                         {:uuid (db/new-block-id)
+                          :content content
+                          :level 1
+                          :meta {:start-pos 0
+                                 :end-pos (or first-block-start-pos
+                                              (utf8/length encoded-content))}
+                          :body @pre-block-body
+                          :properties @pre-block-properties
+                          :pre-block? true
+                          :unordered true}
+                         (block-keywordize)))
+                      (select-keys first-block [:block/file :block/format :block/page]))
+                     blocks)
+                    blocks)]
+       (with-path-refs blocks)))
+    (catch js/Error e
+      (js/console.error "extract-blocks-failed")
+      (log/error :exception e))))
 
 (defn with-parent-and-left
   [page-id blocks]

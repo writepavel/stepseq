@@ -14,6 +14,7 @@
 
 (defonce parseJson (gobj/get Mldoc "parseJson"))
 (defonce parseInlineJson (gobj/get Mldoc "parseInlineJson"))
+(defonce parseOPML (gobj/get Mldoc "parseOPML"))
 (defonce exportToHtml (gobj/get Mldoc "exportToHtml"))
 (defonce anchorLink (gobj/get Mldoc "anchorLink"))
 (defonce parseAndExportMarkdown (gobj/get Mldoc "parseAndExportMarkdown"))
@@ -55,6 +56,10 @@
 (defn inline-parse-json
   [text config]
   (parseInlineJson text config))
+
+(defn parse-opml
+  [content]
+  (parseOPML content))
 
 (defn parse-export-markdown
   [content config references]
@@ -211,7 +216,8 @@
   [type]
   (contains? #{"Paragraph"
                "Raw_Html"
-               "Hiccup"} type))
+               "Hiccup"
+               "Heading"} type))
 
 (defn ->edn
   [content config]
@@ -223,6 +229,17 @@
           (util/json->clj)
           (update-src-full-content content)
           (collect-page-properties)))
+    (catch js/Error e
+      (log/error :edn/convert-failed e)
+      [])))
+
+(defn opml->edn
+  [content]
+  (try
+    (if (string/blank? content)
+      {}
+      (let [[headers blocks] (-> content (parse-opml) (util/json->clj))]
+        [headers (collect-page-properties blocks)]))
     (catch js/Error e
       (log/error :edn/convert-failed e)
       [])))

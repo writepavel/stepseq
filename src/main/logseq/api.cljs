@@ -180,10 +180,7 @@
 
 (def ^:export exit_editing_mode
   (fn [select?]
-    (when-let [block (state/get-edit-block)]
-      (if select?
-        (editor-handler/select-block! (:block/uuid block))
-        (state/clear-edit!)))
+    (editor-handler/escape-editing select?)
     nil))
 
 (def ^:export insert_at_editing_cursor
@@ -235,12 +232,16 @@
 
 (def ^:export insert_block
   (fn [block-uuid-or-page-name content ^js opts]
-    (let [{:keys [before sibling isPageBlock props]} (bean/->clj opts)
+    (let [{:keys [before sibling isPageBlock properties]} (bean/->clj opts)
           page-name (and isPageBlock block-uuid-or-page-name)
           block-uuid (if isPageBlock nil (medley/uuid block-uuid-or-page-name))
           new-block (editor-handler/api-insert-new-block!
-                     content {:block-uuid block-uuid :sibling? sibling :page page-name})]
-
+                     content
+                     {:block-uuid block-uuid
+                      :sibling?   sibling
+                      :before?    before
+                      :page       page-name
+                      :properties properties})]
       (bean/->js (normalize-keyword-for-json new-block)))))
 
 (def ^:export insert_batch_block
@@ -255,7 +256,7 @@
 
 (def ^:export remove_block
   (fn [block-uuid ^js opts]
-    (let [{:keys [includeChildren]} (bean/->clj opts)
+    (let [includeChildren true
           repo (state/get-current-repo)]
       (editor-handler/delete-block-aux!
        {:block/uuid (medley/uuid block-uuid) :repo repo} includeChildren))))
@@ -264,10 +265,10 @@
   (fn [block-uuid content ^js opts]
     (let [opts (and opts (bean/->clj opts))
           repo (state/get-current-repo)
-          editing? (string/ends-with? (state/get-edit-input-id) block-uuid)]
-
+          edit-input (state/get-edit-input-id)
+          editing? (and edit-input (string/ends-with? edit-input block-uuid))]
       (if editing?
-        (state/set-edit-content! (state/get-edit-input-id) content)
+        (state/set-edit-content! edit-input content)
         (editor-handler/save-block! repo (medley/uuid block-uuid) content))
       nil)))
 

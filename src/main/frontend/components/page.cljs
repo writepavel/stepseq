@@ -272,7 +272,8 @@
                        (db/pull [:block/name page-name])))
               _ (when (and (not block?) (db/page-empty? (state/get-current-repo) (:db/id page)))
                   (page-handler/create! page-name {:page-map page
-                                                   :redirect? false}))
+                                                   :redirect? false
+                                                   :create-first-block? false}))
               {:keys [title] :as properties} (:block/properties page)
               page-name (:block/name page)
               page-original-name (:block/original-name page)
@@ -368,13 +369,13 @@
                                     (remove nil?)))]
                    [:div.flex.flex-row
                     (plugins/hook-ui-slot :page-head-actions-slotted nil)
-                    [:a.opacity-30.hover:opacity-100.page-op.mr-1
+                    [:a.opacity-60.hover:opacity-100.page-op.mr-1
                      {:title "Search in current page"
                       :on-click #(route-handler/go-to-search! :page)}
                      svg/search]
                     (ui/dropdown-with-links
                      (fn [{:keys [toggle-fn]}]
-                       [:a.cp__vertial-menu-button
+                       [:a.cp__vertical-menu-button
                         {:title    "More options"
                          :on-click toggle-fn}
                         (svg/vertical-dots nil)])

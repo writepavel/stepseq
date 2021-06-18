@@ -51,7 +51,11 @@
 
    :shortcut.handler/block-editing-only
    ^{:before m/enable-when-editing-mode!}
-   {:editor/backspace
+   {:editor/escape-editing
+    {:desc    "Escape editing (remap to ctrl+open-square-bracket for example)"
+     :binding false
+     :fn      (fn [_ _] (editor-handler/escape-editing))}
+    :editor/backspace
     {:desc    "Backspace / Delete backwards"
      :binding "backspace"
      :fn      editor-handler/editor-backspace}
@@ -99,13 +103,6 @@
     {:desc    "Html Link"
      :binding "mod+k"
      :fn      editor-handler/html-link-format!}
-    ;; FIXME
-    ;; select-all-blocks only works in block editing mode
-    ;; maybe we can improve this
-    :editor/select-all-blocks
-    {:desc    "Select all blocks"
-     :binding "mod+shift+a"
-     :fn      editor-handler/select-all-blocks!}
     :editor/move-block-up
     {:desc    "Move block up"
      :binding (if mac? "mod+shift+up"  "alt+shift+up")
@@ -227,7 +224,11 @@
 
    :shortcut.handler/global-prevent-default
    ^{:before m/prevent-default-behavior}
-   {:editor/zoom-in
+   {:editor/select-all-blocks
+    {:desc    "Select all blocks"
+     :binding "mod+shift+a"
+     :fn      editor-handler/select-all-blocks!}
+    :editor/zoom-in
     {:desc    "Zoom in / Forward"
      :binding (if mac? "mod+." "alt+right")
      :fn      editor-handler/zoom-in!}
@@ -300,6 +301,10 @@
     {:desc    "Toggle wide mode"
      :binding "t w"
      :fn      ui-handler/toggle-wide-mode!}
+    :editor/toggle-open-blocks
+    {:desc    "Toggle open blocks, either collapse or expand all blocks"
+     :binding "t o"
+     :fn      editor-handler/toggle-open!}
     ;; :ui/toggle-between-page-and-file route-handler/toggle-between-page-and-file!
     :git/commit
     {:desc    "Git commit message"
@@ -317,6 +322,7 @@
     :editor/outdent
     :editor/collapse-block-children
     :editor/expand-block-children
+    :editor/select-all-blocks
     :go/search
     :go/search-in-page
     :editor/undo
@@ -325,6 +331,7 @@
     :editor/zoom-out
     :editor/copy
     :editor/cut
+    :editor/toggle-open-blocks
     :ui/toggle-wide-mode]
 
    :shortcut.category/formatting
@@ -354,9 +361,9 @@
     :editor/cycle-todo
     :editor/follow-link
     :editor/open-link-in-sidebar
-    :editor/select-all-blocks
     :editor/move-block-up
-    :editor/move-block-down]
+    :editor/move-block-down
+    :editor/escape-editing]
 
    :shortcut.category/block-command-editing
    ^{:doc "Block command editing"}
@@ -374,6 +381,7 @@
    :shortcut.category/block-selection
    ^{:doc "Block selection (press Esc to quit selection)"}
    [:editor/open-edit
+    :editor/select-all-blocks
     :editor/select-block-up
     :editor/select-block-down
     :editor/delete-selection]
@@ -382,6 +390,7 @@
    ^{:doc "Toggle"}
    [:ui/toggle-help
     :ui/toggle-new-block
+    :editor/toggle-open-blocks
     :ui/toggle-wide-mode
     :ui/toggle-document-mode
     :ui/toggle-brackets

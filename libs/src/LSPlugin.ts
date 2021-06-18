@@ -95,6 +95,9 @@ export interface AppUserConfigs {
   [key: string]: any
 }
 
+/**
+ * In Logseq, a graph represents a repository of connected pages and blocks
+ */
 export interface AppGraphInfo {
   name: string
   url: string
@@ -270,24 +273,23 @@ export interface IEditorProxy extends Record<string, any> {
   insertBlock: (
     srcBlock: BlockIdentity,
     content: string,
-    opts?: Partial<{ before: boolean; sibling: boolean; props: {} }>
+    opts?: Partial<{ before: boolean; sibling: boolean; properties: {} }>
   ) => Promise<BlockEntity | null>
 
   insertBatchBlock: (
     srcBlock: BlockIdentity,
     batch: IBatchBlock | Array<IBatchBlock>,
     opts?: Partial<{ before: boolean, sibling: boolean }>
-  ) => Promise<null>
+  ) => Promise<Array<BlockEntity> | null>
 
   updateBlock: (
     srcBlock: BlockIdentity,
     content: string,
-    opts?: Partial<{ props: {} }>
+    opts?: Partial<{ properties: {} }>
   ) => Promise<void>
 
   removeBlock: (
-    srcBlock: BlockIdentity,
-    opts?: Partial<{ includeChildren: boolean }>
+    srcBlock: BlockIdentity
   ) => Promise<void>
 
   getBlock: (
@@ -311,6 +313,7 @@ export interface IEditorProxy extends Record<string, any> {
     targetBlock: BlockIdentity,
     opts?: Partial<{ before: boolean; children: boolean }>
   ) => Promise<void>
+
   editBlock: (srcBlock: BlockIdentity, opts?: { pos: number }) => Promise<void>
 
   upsertBlockProperty: (
@@ -370,10 +373,15 @@ export interface ILSPluginUser extends EventEmitter<LSPluginUserEvents> {
   settings?: LSPluginBaseInfo['settings']
 
   /**
-   * The main app is ready to run the plugin
+   * The main Logseq app is ready to run the plugin
+   *
+   * @param model - same as the model in `provideModel`
    */
   ready (model?: Record<string, any>): Promise<any>
 
+  /**
+   * @param callback - a function to run when the main Logseq app is ready
+   */
   ready (callback?: (e: any) => void | {}): Promise<any>
 
   ready (
@@ -383,17 +391,46 @@ export interface ILSPluginUser extends EventEmitter<LSPluginUserEvents> {
 
   beforeunload: (callback: () => Promise<void>) => void
 
+  /**
+   * Create a object to hold the methods referenced in `provideUI`
+   *
+   * @example
+   * ```ts
+   * logseq.provideModel({
+   *  openCalendar () {
+   *    console.log('Open the calendar!')
+   *  }
+   * })
+   * ```
+   */
   provideModel (model: Record<string, any>): this
 
+  /**
+   * Set the theme for the main Logseq app
+   */
   provideTheme (theme: ThemeOptions): this
 
   /**
-   * Inject custom css for the plugin
+   * Inject custom css for the main Logseq app
+   *
+   * @example
+   * ```ts
+   *   logseq.provideStyle(`
+   *    @import url("https://at.alicdn.com/t/font_2409735_r7em724douf.css");
+   *  )
+   * ```
+   *
+   * @example
+   * ```ts
+   *
+   * ```
    */
   provideStyle (style: StyleString | StyleOptions): this
 
   /**
-   * Inject custom UI at specific DOM node
+   * Inject custom UI at specific DOM node.
+   * Event handlers can not be passed by string, so you need to create them in `provideModel`
+   *
    * @example
    * ```ts
    * logseq.provideUI({
@@ -413,12 +450,32 @@ export interface ILSPluginUser extends EventEmitter<LSPluginUserEvents> {
 
   setMainUIAttrs (attrs: Record<string, any>): void
 
+  /**
+   * Set the style for the plugin's UI
+   *
+   * @example
+   * ```ts
+   * logseq.setMainUIInlineStyle({
+   *  position: 'fixed',
+   *  zIndex: 11,
+   * })
+   * ```
+   */
   setMainUIInlineStyle (style: CSS.Properties): void
 
+  /**
+   * show the plugin's UI
+   */
   showMainUI (): void
 
+  /**
+   * hide the plugin's UI
+   */
   hideMainUI (opts?: { restoreEditingCursor: boolean }): void
 
+  /**
+   * toggle the plugin's UI
+   */
   toggleMainUI (): void
 
   isMainUIVisible: boolean

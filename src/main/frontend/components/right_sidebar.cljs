@@ -28,7 +28,7 @@
 (rum/defc toggle
   []
   (when-not (util/mobile?)
-    [:a.opacity-50.hover:opacity-100.ml-4 {:on-click state/toggle-sidebar-open?!}
+    [:a.opacity-60.hover:opacity-100.ml-4 {:on-click state/toggle-sidebar-open?!}
     (svg/menu)]))
 
 (rum/defc block-cp < rum/reactive
@@ -259,13 +259,13 @@
         theme (state/sub :ui/theme)
         t (i18n/use-tongue)]
     (rum/with-context [[t] i18n/*tongue-context*]
-      [:div#right-sidebar.cp__right-sidebar.h-screen
+      [:div#right-sidebar.cp__right-sidebar.h-screen.scrollbar-spacing
        {:class (if sidebar-open? "open" "closed")}
        (if sidebar-open?
          [:div.cp__right-sidebar-inner.flex.flex-col.h-full#right-sidebar-container
 
           (sidebar-resizer)
-          [:div.cp__right-sidebar-scollable
+          [:div.cp__right-sidebar-scrollable
            [:div.cp__right-sidebar-topbar.flex.flex-row.justify-between.items-center.px-4.h-12
            [:div.cp__right-sidebar-settings.hide-scrollbar {:key "right-sidebar-settings"}
             [:div.ml-4.text-sm

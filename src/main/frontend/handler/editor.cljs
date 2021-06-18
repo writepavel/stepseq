@@ -659,69 +659,69 @@
              )))))))
 
   (defn api-insert-new-block!
-    ([content {:keys [page last-block-uuid sibling? before? attributes] :as opts}]
+    ([content {:keys [page last-block-uuid sibling? before? properties] :as opts}]
      (api-insert-new-block! content opts nil))
-    ([content {:keys [page last-block-uuid sibling? before? attributes]
+    ([content {:keys [page last-block-uuid sibling? before? properties]
                :or {sibling? false
                     before? false}}
       on-block-inserted-fn]
      (when (or page last-block-uuid)
-    (let [before? (if page false before?)
-          sibling? (if before? true (if page false sibling?))
-          block (if page
-                  (db/entity [:block/name (string/lower-case page)])
-                  (db/entity [:block/uuid last-block-uuid]))]
-      (when block
-        (let [repo (state/get-current-repo)
-              last-block (when (not sibling?)
-                           (let [children (:block/_parent block)
-                                 blocks (db/sort-by-left children block)
-                                 last-block-id (:db/id (last blocks))]
-                             (when last-block-id
-                               (db/pull last-block-id))))
-              new-block (-> (select-keys block [:block/page :block/file :block/journal?
-                                                :block/journal-day])
-                            (assoc :block/content content
-                                   :block/format (or
-                                                  (:block/format block)
-                                                  (db/get-page-format (:db/id block))
-                                                  :markdown))
-                            (wrap-parse-block)
-                            (assoc :block/uuid (db/new-block-id)))
-              new-block (if (:block/page new-block)
-                          (assoc new-block :block/page (:db/id (:block/page new-block)))
-                          (assoc new-block :block/page (:db/id block)))
-              new-block (if-let [db-id (:db/id (:block/file block))]
-                          (assoc new-block :block/file db-id)
-                          new-block)
-              new-block (if (and (map? properties) (seq properties))
-                          (update new-block :block/properties (fn [m] (merge m properties)))
-                          new-block)]
-          (let [[block-m sibling?] (cond
-                                     before?
-                                     (let [block (db/pull (:db/id (:block/left block)))
-                                           sibling? (if (:block/name block) false sibling?)]
-                                       [block sibling?])
+       (let [before? (if page false before?)
+             sibling? (if before? true (if page false sibling?))
+             block (if page
+                     (db/entity [:block/name (string/lower-case page)])
+                     (db/entity [:block/uuid last-block-uuid]))]
+         (when block
+           (let [repo (state/get-current-repo)
+                 last-block (when (not sibling?)
+                              (let [children (:block/_parent block)
+                                    blocks (db/sort-by-left children block)
+                                    last-block-id (:db/id (last blocks))]
+                                (when last-block-id
+                                  (db/pull last-block-id))))
+                 new-block (-> (select-keys block [:block/page :block/file :block/journal?
+                                                   :block/journal-day])
+                               (assoc :block/content content
+                                      :block/format (or
+                                                     (:block/format block)
+                                                     (db/get-page-format (:db/id block))
+                                                     :markdown))
+                               (wrap-parse-block)
+                               (assoc :block/uuid (db/new-block-id)))
+                 new-block (if (:block/page new-block)
+                             (assoc new-block :block/page (:db/id (:block/page new-block)))
+                             (assoc new-block :block/page (:db/id block)))
+                 new-block (if-let [db-id (:db/id (:block/file block))]
+                             (assoc new-block :block/file db-id)
+                             new-block)
+                 new-block (if (and (map? properties) (seq properties))
+                             (update new-block :block/properties (fn [m] (merge m properties)))
+                             new-block)]
+             (let [[block-m sibling?] (cond
+                                        before?
+                                        (let [block (db/pull (:db/id (:block/left block)))
+                                              sibling? (if (:block/name block) false sibling?)]
+                                          [block sibling?])
 
-                                     sibling?
-                                     [(db/pull (:db/id block)) sibling?]
+                                        sibling?
+                                        [(db/pull (:db/id block)) sibling?]
 
-                                     last-block
-                                     [last-block true]
+                                        last-block
+                                        [last-block true]
 
-                                     block
-                                     [(db/pull (:db/id block)) sibling?]
+                                        block
+                                        [(db/pull (:db/id block)) sibling?]
 
                                      ;; FIXME: assert
-                                     :else
-                                     nil)]
-            (when block-m
-              (outliner-insert-block! {:skip-save-current-block? true} block-m new-block sibling?)
-              (ui-handler/re-render-root!)
-              (when on-block-inserted-fn
+                                        :else
+                                        nil)]
+               (when block-m
+                 (outliner-insert-block! {:skip-save-current-block? true} block-m new-block sibling?)
+                 (ui-handler/re-render-root!)
+                 (when on-block-inserted-fn
                 ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-                (on-block-inserted-fn new-block)
-              new-block)))))))
+                   (on-block-inserted-fn new-block)
+                   new-block)))))))))
 
 (defn insert-first-page-block-if-not-exists!
   [page-name]
@@ -2467,7 +2467,7 @@
 
 ;; TODO consider removing this function at all just use template-on-chosen-after-block-handler instead
 (defn outliner-insert-step-template-block-tree!
-  [config last-block template-type step-block-id sibling? on-block-inserted-fn]
+  [config last-block template-type step-block-id sibling? before? on-block-inserted-fn]
   (clogn "outliner-insert-step-template-block-tree!")
   (let [ref-top-block? (and (:ref? config)
                             (not (:ref-child? config)))
@@ -2499,7 +2499,10 @@
     ))
 
 (defn api-insert-new-step-block-tree!
-  [template-type step-block-id {:keys [page last-block-uuid sibling? attributes]} on-block-inserted-fn]
+  [template-type step-block-id {:keys [page last-block-uuid sibling? before? attributes]
+                                :or {sibling? false
+                                     before? false}} 
+   on-block-inserted-fn]
   (when (or page last-block-uuid)
     (when-let [last-block (if last-block-uuid
                             (db/pull [:block/uuid last-block-uuid])
@@ -2514,7 +2517,7 @@
 
       ;; (clogn ["api-insert-new-step-block-tree!" template-type step-block-id page last-block-uuid sibling? last-block])
 
-      (outliner-insert-step-template-block-tree! {} last-block template-type step-block-id sibling? on-block-inserted-fn)
+      (outliner-insert-step-template-block-tree! {} last-block template-type step-block-id sibling? before? on-block-inserted-fn)
 
       ;; ;; TODO: DRY
       ;;  (let [new-block-tree (clogn (-> (select-keys last-block [:block/parent :block/left :block/format

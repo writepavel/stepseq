@@ -2299,10 +2299,10 @@
                 (get-block-tree-insert-pos-after-block last-block)]
        (let [target-block (outliner-core/block target-block)
              editing-block (outliner-core/block editing-block)
-             _ (outliner-core/save-node editing-block)
-             _ (outliner-core/insert-nodes tree target-block sibling?)
+            ;;  _ (outliner-core/save-node editing-block)
+            ;;  _ (outliner-core/insert-nodes tree target-block sibling?)
              ;  [target-block-id sibling? tree format]
-            ;;  _ (paste-block-tree-after-target (get-in target-block [:data :db/id]) sibling? tree format)
+             _ (paste-block-tree-after-target (get-in target-block [:data :db/id]) sibling? tree format)
              _ (when delete-editing-block?
                  (when-let [id (:db/id (outliner-core/get-data editing-block))]
                    (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))
@@ -2311,53 +2311,34 @@
          (last tree))))))
 
 (defn put-template-content-at-point
-  ([template-tree exclude-properties format properties-to-remove]
-   (put-template-content-at-point template-tree exclude-properties format properties-to-remove nil nil))
-  ([template-tree exclude-properties format properties-to-remove get-pos-fn page-block]
-  (let [page (or page-block
-                 (:block/page (db/entity (:db/id (state/get-edit-block)))))
-        file (:block/file page)
-        new-block-uuids (atom #{})
-        tree-update-fn update-tree-metadata
-        content-update-fn (update-content-for-template-fn properties-to-remove format)
-        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-    (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
-
-(defn put-step-template-content-at-point
-  ([template-tree exclude-properties format properties-to-remove]
-   (put-step-template-content-at-point template-tree exclude-properties format properties-to-remove nil nil))
-  ([template-tree exclude-properties format properties-to-remove get-pos-fn page-block]
-  (let [page (or page-block
-                 (:block/page (db/entity (:db/id (state/get-edit-block)))))
-        file (:block/file page)
-        new-block-uuids (atom #{})
-        tree-update-fn update-tree-to-step-outline
-        content-update-fn (update-content-for-step-outline-fn properties-to-remove format (first template-tree))
-        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-    (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
+  ([template-content-data format]
+   (put-template-content-at-point template-content-data format nil nil))
+  ([[template-tree exclude-properties tree-update-fn content-update-fn]
+    format get-pos-fn page-block]
+   (let [page (or page-block
+                  (:block/page (db/entity (:db/id (state/get-edit-block)))))
+         file (:block/file page)
+         new-block-uuids (atom #{})
+         updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
+     (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
 
 (defn put-template-content-after-block
-  ([template-type last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn]
-   (put-template-content-after-block template-type last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn nil nil))
-  ([template-type last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn get-pos-fn page-block]
-  (clogn [last-block template-tree exclude-properties format properties-to-remove])
-  (let [page (or page-block (:block/page last-block))
-        file (:block/file page)
-        new-block-uuids (atom #{})
-        tree-update-fn (case template-type
-                         :general-template update-tree-metadata
-                         :step-template update-tree-to-step-outline)
-        content-update-fn (case template-type
-                            :general-template (update-content-for-template-fn properties-to-remove format)
-                            :step-template (update-content-for-step-outline-fn properties-to-remove format (first template-tree)))
-        updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-    (paste-block-tree-after-block updated-tree new-block-uuids last-block get-pos-fn)
+  ([template-content-data format last-block on-block-inserted-fn]
+   (put-template-content-after-block template-content-data format last-block on-block-inserted-fn nil nil))
+  ([[template-tree exclude-properties tree-update-fn content-update-fn]
+    format last-block on-block-inserted-fn get-pos-fn page-block]
+   (clogn [last-block format page-block])
+   (let [page (or page-block (:block/page last-block))
+         file (:block/file page)
+         new-block-uuids (atom #{})
+         updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
+     (paste-block-tree-after-block updated-tree new-block-uuids last-block get-pos-fn)
     ;; (paste-block-tree-after-target updated-tree new-block-uuids last-block get-pos-fn)
-    (when on-block-inserted-fn
-      (on-block-inserted-fn updated-tree)
+     (when on-block-inserted-fn
+       (on-block-inserted-fn updated-tree)
       ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-      )
-    (last updated-tree))))
+       )
+     (last updated-tree))))
 
 ;; (defn put-step-template-content-after-block
 ;;   ([last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn]
@@ -2393,35 +2374,6 @@
       template-tree (blocks-vec->tree result-blocks)]
   template-tree))
 
-(defn template-on-chosen-handler
-  [template-type _input id _q format _edit-block _edit-content]
-  (fn [[_template-name template-db-id] _click?]
-    ;; TODO just invoke handle-generate-template @Pasha
-    (let [repo (state/get-current-repo)
-          template-tree (build-template-tree template-db-id repo)
-          template-property (case template-type
-                              :general-template :template
-                              :step-template :step-form)
-          properties-to-remove (case template-type
-                                 :general-template [:template :template-including-parent]
-                                 :step-template [:step-form :template-including-parent :step-picture :reward-for-answer :first-answer-to-title])
-          properties-to-hide properties-to-remove]
-
-      (insert-command! id "" format {})
-
-      (let [last-block (case template-type
-                         :general-template (put-template-content-at-point template-tree (into [template-property] properties-to-hide) format properties-to-remove)
-                         :step-template (put-step-template-content-at-point template-tree (into [template-property] properties-to-hide) format properties-to-remove))]
-
-        (clear-when-saved!)
-        (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]})
-      ;; FIXME:
-      ;; (js/setTimeout
-      ;;  #(edit-block! {:block/uuid (:block/uuid last-block)} :max nil (:block/uuid last-block))
-      ;;  100)
-      ;;   (clogn last-block)
-        ))
-
     ; my modification: put-template-content-at-point invoking tree generation and append-block-tree-at-target
       ; new version master:
       ; paste-block-vec-tree-at-target
@@ -2434,35 +2386,55 @@
       ;                                  (property/remove-property format "template-including-parent")
       ;                                  template/resolve-dynamic-template!)))
 
+(defn build-template-content-data
+  "returns [template-tree exclude-properties tree-update-fn content-update-fn]"
+  [template-type template-db-id repo format]
+(let [template-tree (build-template-tree template-db-id repo)
+      template-property (case template-type
+                          :general-template :template
+                          :step-template :step-form)
+      properties-to-remove (case template-type
+                             :general-template [:template :template-including-parent]
+                             :step-template [:step-form :template-including-parent :step-picture :reward-for-answer :first-answer-to-title])
+      properties-to-hide properties-to-remove
+      exclude-properties (into [template-property] properties-to-hide)
+      tree-update-fn (case template-type
+                       :general-template update-tree-metadata
+                       :step-template update-tree-to-step-outline)
+      content-update-fn (case template-type
+                          :general-template (update-content-for-template-fn properties-to-remove format)
+                          :step-template (update-content-for-step-outline-fn properties-to-remove format (first template-tree)))]
+  [template-tree exclude-properties tree-update-fn content-update-fn]))
+
+(defn template-on-chosen-handler
+  [template-type _ id _ format _ _]
+  (fn [[_ template-db-id] _]
+    ;; TODO just invoke handle-generate-template @Pasha
+    (let [repo (state/get-current-repo)
+          template-content-data (build-template-content-data template-type template-db-id repo format)]
+      (clogn ["template-on-chosen-handler" template-content-data])
+      (insert-command! id "" format {})
+      (let [last-block (put-template-content-at-point template-content-data format)]
+        (clear-when-saved!)
+        (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]})
+      ;; FIXME:
+      ;; (js/setTimeout
+      ;;  #(edit-block! {:block/uuid (:block/uuid last-block)} :max nil (:block/uuid last-block))
+      ;;  100)
+      ;;   (clogn last-block)
+        ))
     (when-let [input (gdom/getElement id)]
       (.focus input))))
 
 (defn template-on-chosen-after-block-handler
-  [template-type _template-name template-db-id last-block on-block-inserted-fn]
+  [template-type _ template-db-id last-block on-block-inserted-fn]
   (let [repo (state/get-current-repo)
-        template-tree (build-template-tree template-db-id repo)
-        template-property (case template-type
-                            :general-template :template
-                            :step-template :step-form)
-        properties-to-remove (case template-type
-                               :general-template [:template :including-parent]
-                               :step-template [:step-form :template-including-parent :step-picture :reward-for-answer :first-answer-to-title])
-        properties-to-hide properties-to-remove]
-
-    ;; (insert-command! id "" format {})
-    (put-template-content-after-block template-type last-block template-tree (into [template-property] properties-to-hide) (:block/format last-block) properties-to-remove on-block-inserted-fn)
-;; ;; TODO Split into generate tree and insert tree
-;;     (case template-type
-;;       :general-template (put-template-content-after-block last-block template-tree (into [template-property] properties-to-hide) (:block/format last-block) properties-to-remove on-block-inserted-fn))
-;;       :step-template (put-step-template-content-after-block last-block template-tree (into [template-property] properties-to-hide) (:block/format last-block) properties-to-remove on-block-inserted-fn))
+        format (:block/format last-block)
+        template-content-data (build-template-content-data template-type template-db-id repo format)]
+    (clogn ["template-on-chosen-after-block-handler" template-content-data])
+    (put-template-content-after-block template-content-data format last-block on-block-inserted-fn)
     (clear-when-saved!)
     (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]})
-
-    ;; (when on-block-inserted-fn
-    ;;   (on-block-inserted-fn new-block-tree)
-    ;;     ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-    ;;   )
-
     ))
 
 ;; TODO consider removing this function at all just use template-on-chosen-after-block-handler instead

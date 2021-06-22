@@ -659,17 +659,17 @@
              )))))))
 
   (defn api-insert-new-block!
-    ([content {:keys [page last-block-uuid sibling? before? properties] :as opts}]
+    ([content {:keys [page-name last-block-uuid sibling? before? properties] :as opts}]
      (api-insert-new-block! content opts nil))
-    ([content {:keys [page last-block-uuid sibling? before? properties]
+    ([content {:keys [page-name last-block-uuid sibling? before? properties]
                :or {sibling? false
                     before? false}}
       on-block-inserted-fn]
-     (when (or page last-block-uuid)
-       (let [before? (if page false before?)
-             sibling? (if before? true (if page false sibling?))
-             block (if page
-                     (db/entity [:block/name (string/lower-case page)])
+     (when (or page-name last-block-uuid)
+       (let [before? (if page-name false before?)
+             sibling? (if before? true (if page-name false sibling?))
+             block (if page-name
+                     (db/entity [:block/name (string/lower-case page-name)])
                      (db/entity [:block/uuid last-block-uuid]))]
          (when block
            (let [repo (state/get-current-repo)
@@ -2327,7 +2327,6 @@
    (put-template-content-after-block template-content-data format last-block on-block-inserted-fn nil nil))
   ([[template-tree exclude-properties tree-update-fn content-update-fn]
     format last-block on-block-inserted-fn get-pos-fn page-block]
-   (clogn [last-block format page-block])
    (let [page (or page-block (:block/page last-block))
          file (:block/file (db/entity (:db/id page)))
          new-block-uuids (atom #{})
@@ -2409,7 +2408,6 @@
 (defn template-on-chosen-handler
   [template-type _ id _ format _ _]
   (fn [[_ template-db-id] _]
-    ;; TODO just invoke handle-generate-template @Pasha
     (let [repo (state/get-current-repo)
           template-content-data (build-template-content-data template-type template-db-id repo format)]
       (clogn ["template-on-chosen-handler" template-content-data])
@@ -2471,16 +2469,16 @@
     ))
 
 (defn api-insert-new-step-block-tree!
-  [template-type step-block-id {:keys [page last-block-uuid sibling? before? attributes]
+  [template-type step-block-id {:keys [page-name last-block-uuid sibling? before? attributes]
                                 :or {sibling? false
                                      before? false}} 
    on-block-inserted-fn]
-  (when (or page last-block-uuid)
+  (when (or page-name last-block-uuid)
     (when-let [last-block (if last-block-uuid
                             (db/pull [:block/uuid last-block-uuid])
-                            (let [page-entity (db/entity [:block/name (string/lower-case page)])
+                            (let [page-entity (db/entity [:block/name (string/lower-case page-name)])
                                   ;; children (:block/_parent page)
-                                  blocks (db/get-page-blocks page)
+                                  blocks (db/get-page-blocks page-name)
                                   last-block-id (or
                                                  (:db/id (last blocks))
                                                 ;;  (:db/id (last children))

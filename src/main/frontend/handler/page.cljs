@@ -417,27 +417,27 @@
 
 (defn handle-focus-new-step!
         [template-type step-block-id]
-        (let [last-journal-page (ffirst (db/get-latest-journals 1))
-          content (str "last-journal-page = " last-journal-page ", template = " template-type)]
+        (let [last-journal-page-name (ffirst (db/get-latest-journals 1))
+          content (str "last-journal-page-name = " last-journal-page-name ", template = " template-type)]
           (clogn content)
           (editor-handler/api-insert-new-step-block-tree! ;; TODO invoke template-on-chosen-after-block-handler
            template-type
            step-block-id
-           {:page last-journal-page
+           {:page-name last-journal-page-name
             :sibling? true}
            #(route-handler/focus-on-block! (:block/uuid %)))
         (notification/show! content :success)))
 
 (defn handle-focus-new-journal-line!
         [template-type step-block-id]
-        (let [last-journal-page (ffirst (db/get-latest-journals 1))
-          content (str "last-journal-page = " last-journal-page ", template = " template-type)]
+        (let [last-journal-page-name (ffirst (db/get-latest-journals 1))
+          content (str "last-journal-page-name = " last-journal-page-name ", template = " template-type)]
           (editor-handler/api-insert-new-block!
      content
-     {:page last-journal-page
+     {:page-name last-journal-page-name
       :sibling? true}
       #(route-handler/focus-on-block! (:block/uuid %)))
-        (notification/show! (str "New line added to " last-journal-page) :success)))
+        (notification/show! (str "New line added to " last-journal-page-name) :success)))
 
 (defn handle-add-page-to-contents!
   [page-name]

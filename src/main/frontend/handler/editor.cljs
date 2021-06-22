@@ -2299,10 +2299,10 @@
                 (get-block-tree-insert-pos-after-block last-block)]
        (let [target-block (outliner-core/block target-block)
              editing-block (outliner-core/block editing-block)
-            ;;  _ (outliner-core/save-node editing-block)
-            ;;  _ (outliner-core/insert-nodes tree target-block sibling?)
+              _ (outliner-core/save-node editing-block)
+              _ (outliner-core/insert-nodes tree target-block sibling?)
              ;  [target-block-id sibling? tree format]
-             _ (paste-block-tree-after-target (get-in target-block [:data :db/id]) sibling? tree format)
+             ;_ (paste-block-tree-after-target (get-in target-block [:data :db/id]) sibling? tree format)
              _ (when delete-editing-block?
                  (when-let [id (:db/id (outliner-core/get-data editing-block))]
                    (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))

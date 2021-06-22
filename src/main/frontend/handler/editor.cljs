@@ -2219,7 +2219,7 @@
   ([tree get-pos-fn page-block]
    (let [page (or page-block
                   (:block/page (db/entity (:db/id (state/get-edit-block)))))
-         file (:block/file page)
+         file (:block/file (db/entity (:db/id page)))
          format (state/get-preferred-format)
          new-block-uuids (atom #{})
          tree-update-fn update-tree-metadata
@@ -2317,7 +2317,7 @@
     format get-pos-fn page-block]
    (let [page (or page-block
                   (:block/page (db/entity (:db/id (state/get-edit-block)))))
-         file (:block/file page)
+         file (:block/file (db/entity (:db/id page)))
          new-block-uuids (atom #{})
          updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
      (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
@@ -2329,7 +2329,7 @@
     format last-block on-block-inserted-fn get-pos-fn page-block]
    (clogn [last-block format page-block])
    (let [page (or page-block (:block/page last-block))
-         file (:block/file page)
+         file (:block/file (db/entity (:db/id page)))
          new-block-uuids (atom #{})
          updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
      (paste-block-tree-after-block updated-tree new-block-uuids last-block get-pos-fn)

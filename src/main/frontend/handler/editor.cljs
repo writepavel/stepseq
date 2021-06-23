@@ -656,7 +656,9 @@
            (when on-block-inserted-fn
              (on-block-inserted-fn new-block)
              ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-             )))))))
+             ))))))
+             
+)
 
   (defn api-insert-new-block!
     ([content {:keys [page-name last-block-uuid sibling? before? properties] :as opts}]
@@ -1962,7 +1964,7 @@
 (defn get-block-tree-insert-pos-after-block
   [last-block]
   "return [target-block sibling? delete-editing-block? editing-block]"
-[last-block true false last-block])
+  (fn [] [last-block true false last-block]))
 
 (defn- block-edit-fn-aux
   [uuid file page exclude-properties format content-update-fn]
@@ -2272,6 +2274,7 @@
               (recur (zip/next (zip/replace loc fst-block))))))))))
 
 (defn paste-block-tree-after-target
+  "invoked by api insert_batch_block. With strange logic of tree -> vec-block-tree conversion"
   [target-block-id sibling? tree format]
   (clogn (let [vec-tree (tree->vec-tree tree)
                block-tree (vec-tree->vec-block-tree vec-tree format)
@@ -2279,7 +2282,7 @@
                page-block (if (:block/name target-block)
                             target-block
                             (db/entity (:db/id (:block/page (db/pull target-block-id)))))
-        ;; sibling? = false, when target-block is a page-block
+               ;; sibling? = false, when target-block is a page-block
                sibling? (if (=  target-block-id (:db/id page-block))
                           false
                           sibling?)]
@@ -2296,7 +2299,7 @@
    (let [repo (state/get-current-repo)
          format (or (:block/format last-block) (state/get-preferred-format))]
      (when-let [[target-block sibling? delete-editing-block? editing-block]
-                (get-block-tree-insert-pos-after-block last-block)]
+                (( get-block-tree-insert-pos-after-block last-block))]
        (let [target-block (outliner-core/block target-block)
              editing-block (outliner-core/block editing-block)
               _ (outliner-core/save-node editing-block)
@@ -2309,18 +2312,32 @@
              new-blocks (db/pull-many repo '[*] (map (fn [id] [:block/uuid id]) @new-block-uuids))]
          (db/refresh! repo {:key :block/insert :data new-blocks})
          (last tree))))))
-
-(defn put-template-content-at-point
+  
+  (defn put-template-content-at-point
   ([template-content-data format]
    (put-template-content-at-point template-content-data format nil nil))
+
+  ([template-content-data format get-pos-fn page-block]
+   (clogn (let [edit-block (state/get-edit-block)]
+
+            (put-template-content-at-point template-content-data format edit-block nil nil nil))))
+
   ([[template-tree exclude-properties tree-update-fn content-update-fn]
-    format get-pos-fn page-block]
+    format edit-block get-pos-fn on-block-inserted-fn page-block]
    (let [page (or page-block
-                  (:block/page (db/entity (:db/id (state/get-edit-block)))))
+                  (:block/page edit-block))
          file (:block/file (db/entity (:db/id page)))
          new-block-uuids (atom #{})
-         updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-     (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn))))
+         updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)
+         last-appended-tree-block (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)]
+
+     (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)
+     (when on-block-inserted-fn
+       (on-block-inserted-fn updated-tree)
+      ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
+       )
+     last-appended-tree-block
+     )))
 
 (defn put-template-content-after-block
   ([template-content-data format last-block on-block-inserted-fn]
@@ -2428,9 +2445,10 @@
   [template-type _ template-db-id last-block on-block-inserted-fn]
   (let [repo (state/get-current-repo)
         format (:block/format last-block)
-        template-content-data (build-template-content-data template-type template-db-id repo format)]
+        template-content-data (build-template-content-data template-type template-db-id repo format)
+        get-pos-fn (get-block-tree-insert-pos-after-block last-block)]
     (clogn ["template-on-chosen-after-block-handler" template-content-data])
-    (put-template-content-after-block template-content-data format last-block on-block-inserted-fn)
+    (put-template-content-at-point template-content-data format last-block get-pos-fn on-block-inserted-fn nil)
     (clear-when-saved!)
     (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]})
     ))

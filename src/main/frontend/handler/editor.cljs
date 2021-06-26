@@ -2290,28 +2290,6 @@
             block-tree
             #(get-block-tree-insert-pos-after-target target-block-id sibling?)
             page-block))))
-
-;; TODO merge common logic with append-block-tree-at-target and paste-block-tree-after-block
-(defn- paste-block-tree-after-block
-  ([tree new-block-uuids last-block]
-   (paste-block-tree-after-block tree new-block-uuids last-block nil))
-  ([tree new-block-uuids last-block get-pos-fn]
-   (let [repo (state/get-current-repo)
-         format (or (:block/format last-block) (state/get-preferred-format))]
-     (when-let [[target-block sibling? delete-editing-block? editing-block]
-                (( get-block-tree-insert-pos-after-block last-block))]
-       (let [target-block (outliner-core/block target-block)
-             editing-block (outliner-core/block editing-block)
-              _ (outliner-core/save-node editing-block)
-              _ (outliner-core/insert-nodes tree target-block sibling?)
-             ;  [target-block-id sibling? tree format]
-             ;_ (paste-block-tree-after-target (get-in target-block [:data :db/id]) sibling? tree format)
-             _ (when delete-editing-block?
-                 (when-let [id (:db/id (outliner-core/get-data editing-block))]
-                   (outliner-core/delete-node (outliner-core/block (db/pull id)) true)))
-             new-blocks (db/pull-many repo '[*] (map (fn [id] [:block/uuid id]) @new-block-uuids))]
-         (db/refresh! repo {:key :block/insert :data new-blocks})
-         (last tree))))))
   
   (defn put-template-content-at-point
   ([template-content-data format]
@@ -2331,49 +2309,13 @@
          updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)
          last-appended-tree-block (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)]
 
-     (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)
+    ;;  (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)
      (when on-block-inserted-fn
        (on-block-inserted-fn updated-tree)
       ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
        )
      last-appended-tree-block
      )))
-
-(defn put-template-content-after-block
-  ([template-content-data format last-block on-block-inserted-fn]
-   (put-template-content-after-block template-content-data format last-block on-block-inserted-fn nil nil))
-  ([[template-tree exclude-properties tree-update-fn content-update-fn]
-    format last-block on-block-inserted-fn get-pos-fn page-block]
-   (let [page (or page-block (:block/page last-block))
-         file (:block/file (db/entity (:db/id page)))
-         new-block-uuids (atom #{})
-         updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-     (paste-block-tree-after-block updated-tree new-block-uuids last-block get-pos-fn)
-    ;; (paste-block-tree-after-target updated-tree new-block-uuids last-block get-pos-fn)
-     (when on-block-inserted-fn
-       (on-block-inserted-fn updated-tree)
-      ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-       )
-     (last updated-tree))))
-
-;; (defn put-step-template-content-after-block
-;;   ([last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn]
-;;    (put-step-template-content-after-block last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn nil nil))
-;;   ([last-block template-tree exclude-properties format properties-to-remove on-block-inserted-fn get-pos-fn page-block]
-;;   (clogn [last-block template-tree exclude-properties format properties-to-remove])
-;;   (let [page (or page-block (:block/page last-block))
-;;         file (:block/file page)
-;;         new-block-uuids (atom #{})
-;;         tree-update-fn update-tree-to-step-outline
-;;         content-update-fn (update-content-for-step-outline-fn properties-to-remove format (first template-tree))
-;;         updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)]
-;;     (paste-block-tree-after-block updated-tree new-block-uuids last-block get-pos-fn)
-;;     ;; (paste-block-tree-after-target updated-tree new-block-uuids last-block get-pos-fn)
-;;     (when on-block-inserted-fn
-;;       (on-block-inserted-fn updated-tree)
-;;       ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-;;       )
-;;     (last updated-tree))))
 
 (defn build-template-tree
   [template-db-id repo]

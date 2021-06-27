@@ -1944,10 +1944,12 @@ Returns [current-node sibling?]"
               [left-block true false])
             editing-block))))
 
-(defn get-block-tree-insert-pos-after-block
-  [last-block]
-  "return [target-block sibling? delete-editing-block? editing-block]"
-  (fn [] [last-block true false last-block]))
+(defn- get-insert-template-block-tree-pos-fn
+  "Returns [target-block sibling? delete-editing-block? editing-block]"
+  [last-block sibling?]
+  (let [[_ outliner_sibling?] (determine-outliner-current-block-sibling {} last-block sibling?)] ;; from outliner-insert-block!
+  (clogn ["get-insert-template-block-tree-pos-fn" sibling? outliner_sibling?])
+  (fn [] [last-block outliner_sibling? false last-block])))
 
 (defn- block-edit-fn-aux
   [uuid file page exclude-properties format content-update-fn]
@@ -2274,25 +2276,20 @@ Returns [current-node sibling?]"
             #(get-block-tree-insert-pos-after-target target-block-id sibling?)
             page-block))))
   
-  (defn put-template-content-at-point
+  (defn put-template-content-at-point    
   ([template-content-data format]
-   (put-template-content-at-point template-content-data format nil nil))
-
-  ([template-content-data format get-pos-fn page-block]
-   (clogn (let [edit-block (state/get-edit-block)]
-
-            (put-template-content-at-point template-content-data format edit-block nil nil nil))))
-
+   (put-template-content-at-point template-content-data format nil nil nil))
   ([[template-tree exclude-properties tree-update-fn content-update-fn]
-    format edit-block get-pos-fn on-block-inserted-fn page-block]
-   (let [page (or page-block
+    format get-pos-fn on-block-inserted-fn page-block]
+   (let [edit-block (if get-pos-fn
+                      (first (get-pos-fn))
+                      (state/get-edit-block))
+         page (or page-block
                   (:block/page edit-block))
          file (:block/file (db/entity (:db/id page)))
          new-block-uuids (atom #{})
          updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)
          last-appended-tree-block (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)]
-
-    ;;  (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)
      (when on-block-inserted-fn
        (on-block-inserted-fn updated-tree)
       ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
@@ -2366,18 +2363,17 @@ Returns [current-node sibling?]"
     (when-let [input (gdom/getElement id)]
       (.focus input))))
 
-(defn outliner-insert-new-step-block-tree!
+(defn outliner-insert-template-block-tree!
   [template-type template-db-id {:keys [page-name last-block-uuid sibling? before? attributes] :as opts} 
    on-block-inserted-fn]
-  (let [[block last-block sibling?] (determine-page-last-block-and-sibling opts)
-        [outliner-last-node sibling?] (determine-outliner-current-block-sibling {} last-block sibling?)
+  (let [[block last-block sibling?] (determine-page-last-block-and-sibling opts)        
         repo (state/get-current-repo)
         format (:block/format last-block)
         template-content-data (build-template-content-data template-type template-db-id repo format)
-        get-pos-fn (get-block-tree-insert-pos-after-block last-block)]
+        get-pos-fn (get-insert-template-block-tree-pos-fn last-block sibling?)]
     (when block
-      (clogn ["outliner-insert-new-step-block-tree!" template-content-data])
-      (put-template-content-at-point template-content-data format last-block get-pos-fn on-block-inserted-fn nil)
+      (clogn ["outliner-insert-template-block-tree!" template-content-data])
+      (put-template-content-at-point template-content-data format get-pos-fn on-block-inserted-fn nil)
       (clear-when-saved!)
       (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]}))))
 

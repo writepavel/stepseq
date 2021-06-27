@@ -420,7 +420,7 @@
         (let [last-journal-page-name (ffirst (db/get-latest-journals 1))
           content (str "last-journal-page-name = " last-journal-page-name ", template = " template-type)]
           (clogn content)
-          (editor-handler/outliner-insert-new-step-block-tree!
+          (editor-handler/outliner-insert-template-block-tree!
            template-type
            step-block-id
            {:page-name last-journal-page-name

@@ -2291,7 +2291,7 @@ Returns [current-node sibling?]"
          updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)
          last-appended-tree-block (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)]
      (when on-block-inserted-fn
-       (on-block-inserted-fn updated-tree)
+       (on-block-inserted-fn (:data (first updated-tree)))
       ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
        )
      last-appended-tree-block

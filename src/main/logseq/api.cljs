@@ -240,7 +240,7 @@
                      {:block-uuid block-uuid
                       :sibling?   sibling
                       :before?    before
-                      :page       page-name
+                      :page-name  page-name
                       :properties properties})]
       (bean/->js (normalize-keyword-for-json new-block)))))
 

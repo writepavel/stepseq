@@ -444,7 +444,7 @@
   (let [content (str "[[" page-name "]]")]
     (editor-handler/api-insert-new-block!
      content
-     {:page "Contents"})
+     {:page-name "Contents"})
     (notification/show! (util/format "Added to %s!" (state/get-favorites-name)) :success)
     (editor-handler/clear-when-saved!)))
 

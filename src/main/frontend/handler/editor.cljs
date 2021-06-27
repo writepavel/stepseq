@@ -660,28 +660,54 @@
              
 )
 
+(defn determine-last-block-and-sibling-value
+      "Logic extracted from api-insert-new-block! of original logseq"
+  [{:keys [page-name last-block-uuid sibling? before? properties]
+    :or {sibling? false
+         before? false}}]
+  (when (or page-name last-block-uuid)
+    (let [before? (if page-name false before?)
+          sibling? (if before? true (if page-name false sibling?))
+          block (if page-name
+                  (db/entity [:block/name (string/lower-case page-name)])
+                  (db/entity [:block/uuid last-block-uuid]))]
+      (when block
+        (let [last-block (when (not sibling?)
+                           (let [children (:block/_parent block)
+                                 blocks (db/sort-by-left children block)
+                                 last-block-id (:db/id (last blocks))]
+                             (when last-block-id
+                               (db/pull last-block-id))))
+              [block-m sibling?] (cond
+                                   before?
+                                   (let [block (db/pull (:db/id (:block/left block)))
+                                         sibling? (if (:block/name block) false sibling?)]
+                                     [block sibling?])
+
+                                   sibling?
+                                   [(db/pull (:db/id block)) sibling?]
+
+                                   last-block
+                                   [last-block true]
+
+                                   block
+                                   [(db/pull (:db/id block)) sibling?]
+
+                                     ;; FIXME: assert
+                                   :else
+                                   nil)]
+          [block block-m sibling?]
+          )))))
+  
   (defn api-insert-new-block!
     ([content {:keys [page-name last-block-uuid sibling? before? properties] :as opts}]
      (api-insert-new-block! content opts nil))
-    ([content {:keys [page-name last-block-uuid sibling? before? properties]
-               :or {sibling? false
-                    before? false}}
+    ([content {:keys [page-name last-block-uuid sibling? before? properties] :as opts}
       on-block-inserted-fn]
      (when (or page-name last-block-uuid)
-       (let [before? (if page-name false before?)
-             sibling? (if before? true (if page-name false sibling?))
-             block (if page-name
-                     (db/entity [:block/name (string/lower-case page-name)])
-                     (db/entity [:block/uuid last-block-uuid]))]
+       (let [[block block-m sibling?]  (determine-last-block-and-sibling-value opts)]
          (when block
-           (let [repo (state/get-current-repo)
-                 last-block (when (not sibling?)
-                              (let [children (:block/_parent block)
-                                    blocks (db/sort-by-left children block)
-                                    last-block-id (:db/id (last blocks))]
-                                (when last-block-id
-                                  (db/pull last-block-id))))
-                 new-block (-> (select-keys block [:block/page :block/file :block/journal?
+           (let [new-block (-> (select-keys block [:block/page :block/file :block/journal?
                                                    :block/journal-day])
                                (assoc :block/content content
                                       :block/format (or
@@ -699,31 +725,13 @@
                  new-block (if (and (map? properties) (seq properties))
                              (update new-block :block/properties (fn [m] (merge m properties)))
                              new-block)]
-             (let [[block-m sibling?] (cond
-                                        before?
-                                        (let [block (db/pull (:db/id (:block/left block)))
-                                              sibling? (if (:block/name block) false sibling?)]
-                                          [block sibling?])
-
-                                        sibling?
-                                        [(db/pull (:db/id block)) sibling?]
-
-                                        last-block
-                                        [last-block true]
-
-                                        block
-                                        [(db/pull (:db/id block)) sibling?]
-
-                                     ;; FIXME: assert
-                                        :else
-                                        nil)]
                (when block-m
                  (outliner-insert-block! {:skip-save-current-block? true} block-m new-block sibling?)
                  (ui-handler/re-render-root!)
                  (when on-block-inserted-fn
                 ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
                    (on-block-inserted-fn new-block)
-                   new-block)))))))))
+                   new-block))))))))
 
 (defn insert-first-page-block-if-not-exists!
   [page-name]
@@ -2438,12 +2446,14 @@
                             (db/pull [:block/uuid last-block-uuid])
                             (let [page-entity (db/entity [:block/name (string/lower-case page-name)])
                                   ;; children (:block/_parent page)
+                                  ;; blocks (db/get-page-blocks page-name)
                                   blocks (db/get-page-blocks page-name)
                                   last-block-id (or
                                                  (:db/id (last blocks))
                                                 ;;  (:db/id (last children))
                                                  (:db/id page-entity))]
-                              (db/pull last-block-id)))]
+                              (db/pull last-block-id))
+                            )]
 
       ;; (clogn ["api-insert-new-step-block-tree!" template-type step-block-id page last-block-uuid sibling? last-block])
 

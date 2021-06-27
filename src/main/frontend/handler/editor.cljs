@@ -393,13 +393,13 @@
         snd-block-text (string/triml (subs value pos))]
     [fst-block-text snd-block-text]))
 
-(defn outliner-insert-block!
-  [config current-block new-block sibling?]
+(defn- determine-outliner-current-block-sibling
+"Extracted logic from outliner-insert-block! of original logseq.
+Returns [current-node sibling?]"
+  [config current-block sibling?]
   (let [ref-top-block? (and (:ref? config)
                             (not (:ref-child? config)))
-        skip-save-current-block? (:skip-save-current-block? config)
-        [current-node new-node]
-        (mapv outliner-core/block [current-block new-block])
+        current-node (outliner-core/block current-block)
         has-children? (db/has-children? (state/get-current-repo)
                                         (tree/-get-id current-node))
         sibling? (cond
@@ -414,6 +414,13 @@
 
                    :else
                    (not has-children?))]
+    [current-node sibling?]))    
+
+(defn outliner-insert-block!
+  [config current-block new-block sibling?]
+  (let [[current-node sibling?] (determine-outliner-current-block-sibling config current-block sibling?)
+  new-node (outliner-core/block new-block)
+        skip-save-current-block? (:skip-save-current-block? config)]
     (let [*blocks (atom [current-node])]
       (when-not skip-save-current-block?
         (outliner-core/save-node current-node))
@@ -628,40 +635,9 @@
              (clear-when-saved!))}))))
    (state/set-editor-op! nil)))
 
-(comment
-
-
-  (defn api-insert-new-block!
-    ([content {:keys [page last-block-uuid sibling? attributes] :as opts}]
-     (api-insert-new-block! content opts nil))
-    ([content {:keys [page last-block-uuid sibling? attributes]} on-block-inserted-fn]
-     (when (or page last-block-uuid)
-       (when-let [last-block (if last-block-uuid
-                               (db/pull [:block/uuid last-block-uuid])
-                               (let [page (db/entity [:block/name (string/lower-case page)])
-                                     children (:block/_parent page)
-                                     blocks (db/sort-by-left children page)
-                                     last-block-id (or (:db/id (last blocks))
-                                                       (:db/id page))]
-                                 (db/pull last-block-id)))]
-         ;; TODO: DRY
-         (let [new-block (clogn(-> (select-keys last-block [:block/parent :block/left :block/format
-                                                            :block/page :block/file :block/journal?])
-                                   (assoc :block/content content)
-                                   (wrap-parse-block)))
-               repo (state/get-current-repo)]
-           (outliner-insert-block! {} last-block new-block sibling?)
-           (db/refresh! repo {:key :block/insert
-                              :data [new-block]})
-           (when on-block-inserted-fn
-             (on-block-inserted-fn new-block)
-             ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-             ))))))
-             
-)
-
-(defn determine-last-block-and-sibling-value
-      "Logic extracted from api-insert-new-block! of original logseq"
+(defn- determine-page-last-block-and-sibling
+  "Logic extracted from api-insert-new-block! of original logseq
+   Returns [block block-m sibling?]"
   [{:keys [page-name last-block-uuid sibling? before? properties]
     :or {sibling? false
          before? false}}]
@@ -696,8 +672,7 @@
                                      ;; FIXME: assert
                                    :else
                                    nil)]
-          [block block-m sibling?]
-          )))))
+          [block block-m sibling?])))))
   
   (defn api-insert-new-block!
     ([content {:keys [page-name last-block-uuid sibling? before? properties] :as opts}]
@@ -705,7 +680,7 @@
     ([content {:keys [page-name last-block-uuid sibling? before? properties] :as opts}
       on-block-inserted-fn]
      (when (or page-name last-block-uuid)
-       (let [[block block-m sibling?]  (determine-last-block-and-sibling-value opts)]
+       (let [[block block-m sibling?]  (determine-page-last-block-and-sibling opts)]
          (when block
            (let [new-block (-> (select-keys block [:block/page :block/file :block/journal?
                                                    :block/journal-day])
@@ -2391,88 +2366,20 @@
     (when-let [input (gdom/getElement id)]
       (.focus input))))
 
-(defn template-on-chosen-after-block-handler
-  [template-type _ template-db-id last-block on-block-inserted-fn]
-  (let [repo (state/get-current-repo)
+(defn outliner-insert-new-step-block-tree!
+  [template-type template-db-id {:keys [page-name last-block-uuid sibling? before? attributes] :as opts} 
+   on-block-inserted-fn]
+  (let [[block last-block sibling?] (determine-page-last-block-and-sibling opts)
+        [outliner-last-node sibling?] (determine-outliner-current-block-sibling {} last-block sibling?)
+        repo (state/get-current-repo)
         format (:block/format last-block)
         template-content-data (build-template-content-data template-type template-db-id repo format)
         get-pos-fn (get-block-tree-insert-pos-after-block last-block)]
-    (clogn ["template-on-chosen-after-block-handler" template-content-data])
-    (put-template-content-at-point template-content-data format last-block get-pos-fn on-block-inserted-fn nil)
-    (clear-when-saved!)
-    (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]})
-    ))
-
-;; TODO consider removing this function at all just use template-on-chosen-after-block-handler instead
-(defn outliner-insert-step-template-block-tree!
-  [config last-block template-type step-block-id sibling? before? on-block-inserted-fn]
-  (clogn "outliner-insert-step-template-block-tree!")
-  (let [ref-top-block? (and (:ref? config)
-                            (not (:ref-child? config)))
-        last-node (outliner-core/block last-block)
-        has-children? (db/has-children? (state/get-current-repo)
-                                        (tree/-get-id last-node))
-        sibling? (cond
-                   ref-top-block?
-                   false
-
-                   (boolean? sibling?)
-                   sibling?
-
-                   (:collapsed (:block/properties last-block))
-                   true
-
-                   :else
-                   (not has-children?))]
-    (template-on-chosen-after-block-handler template-type nil step-block-id last-block on-block-inserted-fn)
-    ;; (let [*blocks (atom [current-node])]
-    ;;   (outliner-core/save-node current-node)
-
-    ;;   put-step-template-content-after-block
-    ;;   (outliner-core/insert-node new-node current-node sibling? {:blocks-atom *blocks
-    ;;                                                              :skip-transact? false})
-    ;;   {:blocks @*blocks
-    ;;    :sibling? sibling?})
-
-    ))
-
-(defn api-insert-new-step-block-tree!
-  [template-type step-block-id {:keys [page-name last-block-uuid sibling? before? attributes]
-                                :or {sibling? false
-                                     before? false}} 
-   on-block-inserted-fn]
-  (when (or page-name last-block-uuid)
-    (when-let [last-block (if last-block-uuid
-                            (db/pull [:block/uuid last-block-uuid])
-                            (let [page-entity (db/entity [:block/name (string/lower-case page-name)])
-                                  ;; children (:block/_parent page)
-                                  ;; blocks (db/get-page-blocks page-name)
-                                  blocks (db/get-page-blocks page-name)
-                                  last-block-id (or
-                                                 (:db/id (last blocks))
-                                                ;;  (:db/id (last children))
-                                                 (:db/id page-entity))]
-                              (db/pull last-block-id))
-                            )]
-
-      ;; (clogn ["api-insert-new-step-block-tree!" template-type step-block-id page last-block-uuid sibling? last-block])
-
-      (outliner-insert-step-template-block-tree! {} last-block template-type step-block-id sibling? before? on-block-inserted-fn)
-
-      ;; ;; TODO: DRY
-      ;;  (let [new-block-tree (clogn (-> (select-keys last-block [:block/parent :block/left :block/format
-      ;;                                                           :block/page :block/file :block/journal?])
-      ;;                             ;; (assoc :block/content content)
-      ;;                                  (wrap-parse-block)))
-      ;;        repo (state/get-current-repo)]
-      ;;    (outliner-insert-step-template-block-tree! {} last-block template-type step-block-id sibling? on-block-inserted-fn)
-      ;;   ;;  (db/refresh! repo {:key :block/insert
-      ;;   ;;                     :data [new-block-tree]})
-      ;;    (when on-block-inserted-fn
-      ;;      (on-block-inserted-fn new-block-tree)
-      ;;   ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
-      ;;      )
-      )))
+    (when block
+      (clogn ["outliner-insert-new-step-block-tree!" template-content-data])
+      (put-template-content-at-point template-content-data format last-block get-pos-fn on-block-inserted-fn nil)
+      (clear-when-saved!)
+      (db/refresh! repo {:key :block/insert :data [(db/pull template-db-id)]}))))
 
 (defn parent-is-page?
   [{{:block/keys [parent page]} :data :as node}]

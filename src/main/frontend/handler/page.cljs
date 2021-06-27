@@ -415,12 +415,12 @@
                 ;; end of comment
   )
 
-(defn handle-focus-new-step!
+(defn handle-focus-insert-template-into-journal!
         [template-type step-block-id]
         (let [last-journal-page-name (ffirst (db/get-latest-journals 1))
           content (str "last-journal-page-name = " last-journal-page-name ", template = " template-type)]
           (clogn content)
-          (editor-handler/api-insert-new-step-block-tree! ;; TODO invoke template-on-chosen-after-block-handler
+          (editor-handler/outliner-insert-new-step-block-tree!
            template-type
            step-block-id
            {:page-name last-journal-page-name

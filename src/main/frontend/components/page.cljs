@@ -523,10 +523,10 @@
     [:tr {:key step-block-id}
      [:td (ui/button step-name
                      :on-click (fn []
-                                ;;  (page-handler/handle-focus-new-journal-line! 
-                                ;;   (str step-name " <% today %> <% time %> ") step-block-id)
-                                 (println " (page-handler/handle-focus-new-step! :step-template step-block-id) ")
-                                   (page-handler/handle-focus-new-step! :step-template step-block-id)
+                                 (page-handler/handle-focus-new-journal-line! 
+                                  (str step-name " <% today %> <% time %> ") step-block-id)
+                                ;;  (println " (page-handler/handle-focus-insert-template-into-journal! :step-template step-block-id) ")
+                                  ;;  (page-handler/handle-focus-insert-template-into-journal! :step-template step-block-id)
                                  ))]
     ;;  [:td step-block-id]
      ])
@@ -557,8 +557,8 @@
      [:td (ui/button template-name
                      :on-click (fn []
                                 ;;  (page-handler/handle-focus-new-journal-line! (str step-name " <% today %> <% time %> "))
-                                ;;  (println " (page-handler/handle-focus-new-step! :step-template step-block-id) ")
-                                   (page-handler/handle-focus-new-step! :general-template template-block-id)
+                                ;;  (println " (page-handler/handle-focus-insert-template-into-journal! :step-template step-block-id) ")
+                                   (page-handler/handle-focus-insert-template-into-journal! :general-template template-block-id)
                                  ))]
     ;;  [:td step-block-id]
      ])

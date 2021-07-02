@@ -415,9 +415,9 @@
                 ;; end of comment
   )
 
-(defn handle-focus-insert-template-into-journal!
-        [template-type step-block-id]
-        (let [last-journal-page-name (ffirst (db/get-latest-journals 1))
+(defn handle-insert-template-into-journal!
+      [template-type step-block-id]
+      (let [last-journal-page-name (ffirst (db/get-latest-journals 1))
           content (str "last-journal-page-name = " last-journal-page-name ", template = " template-type)]
           (clogn content)
           (editor-handler/outliner-insert-template-block-tree!

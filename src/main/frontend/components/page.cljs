@@ -523,7 +523,7 @@
     [:tr {:key step-block-id}
      [:td (ui/button step-name
                      :on-click (fn []
-                                   (page-handler/handle-focus-insert-template-into-journal! :step-template step-block-id)))]
+                                   (page-handler/handle-insert-template-into-journal! :step-template step-block-id)))]
     ;;  [:td step-block-id]
      ])
   )]]))])))
@@ -552,7 +552,7 @@
     [:tr {:key template-block-id}
      [:td (ui/button template-name
                      :on-click (fn []
-                                   (page-handler/handle-focus-insert-template-into-journal! :general-template template-block-id)))]
+                                   (page-handler/handle-insert-template-into-journal! :general-template template-block-id)))]
     ;;  [:td step-block-id]
      ])
   )]]))])))

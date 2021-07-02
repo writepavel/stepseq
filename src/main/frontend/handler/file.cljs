@@ -1,28 +1,28 @@
 (ns frontend.handler.file
   (:refer-clojure :exclude [load-file])
-  (:require [frontend.util :as util :refer-macros [profile]]
+  (:require ["/frontend/utils" :as utils]
+            [borkdude.rewrite-edn :as rewrite]
+            [cljs-bean.core :as bean]
+            [cljs-time.coerce :as tc]
+            [cljs-time.core :as t]
+            [cljs.core.async.interop :refer [<p!]]
+            [clojure.core.async :as async]
+            [clojure.string :as string]
+            [frontend.config :as config]
+            [frontend.db :as db]
+            [frontend.format :as format]
             [frontend.fs :as fs]
             [frontend.fs.nfs :as nfs]
-            [promesa.core :as p]
-            [frontend.state :as state]
-            [frontend.db :as db]
             [frontend.git :as git]
             [frontend.handler.common :as common-handler]
             [frontend.handler.extract :as extract-handler]
-            [frontend.handler.ui :as ui-handler]
             [frontend.handler.route :as route-handler]
-            [cljs-bean.core :as bean]
-            [frontend.config :as config]
-            [frontend.format :as format]
-            [clojure.string :as string]
-            [lambdaisland.glogi :as log]
-            [clojure.core.async :as async]
-            [cljs.core.async.interop :refer-macros [<p!]]
-            [cljs-time.core :as t]
-            [cljs-time.coerce :as tc]
+            [frontend.handler.ui :as ui-handler]
+            [frontend.state :as state]
             [frontend.utf8 :as utf8]
-            [borkdude.rewrite-edn :as rewrite]
-            ["/frontend/utils" :as utils]))
+            [frontend.util :as util]
+            [lambdaisland.glogi :as log]
+            [promesa.core :as p]))
 
 ;; TODO: extract all git ops using a channel
 
@@ -61,19 +61,6 @@
   [files]
   (keep-formats files (config/img-formats)))
 
-(defn- hidden?
-  [path patterns]
-  (let [path (if (and (string? path)
-                      (= \/ (first path)))
-               (subs path 1)
-               path)]
-    (some (fn [pattern]
-            (let [pattern (if (and (string? pattern)
-                                   (not= \/ (first pattern)))
-                            (str "/" pattern)
-                            pattern)]
-              (string/starts-with? (str "/" path) pattern))) patterns)))
-
 (defn restore-config!
   ([repo-url project-changed-check?]
    (restore-config! repo-url nil project-changed-check?))
@@ -93,9 +80,7 @@
                                     (config/get-config-path repo-url))
           files (if config-content
                   (let [config (restore-config! repo-url config-content true)]
-                    (if-let [patterns (seq (:hidden config))]
-                      (remove (fn [path] (hidden? path patterns)) files)
-                      files))
+                    (common-handler/remove-hidden-files files config identity))
                   files)]
     (only-supported-formats files)))
 

@@ -146,7 +146,15 @@
     :editor/backward-kill-word
     {:desc    "Kill a word backwards"
      :binding (if mac? false "alt+w")
-     :fn      editor-handler/backward-kill-word}}
+     :fn      editor-handler/backward-kill-word}
+    :editor/replace-block-reference-at-point
+    {:desc "Replace block reference with its content at point"
+     :binding "mod+shift+r"
+     :fn editor-handler/replace-block-reference-with-content-at-point}
+    :editor/paste-text-in-one-block-at-point
+    {:desc "Paste text into one block at point"
+     :binding "mod+shift+v"
+     :fn editor-handler/paste-text-in-one-block-at-point}}
 
    :shortcut.handler/editor-global
    ^{:before m/enable-when-not-component-editing!}
@@ -229,11 +237,11 @@
      :binding "mod+shift+a"
      :fn      editor-handler/select-all-blocks!}
     :editor/zoom-in
-    {:desc    "Zoom in / Forward"
+    {:desc    "Zoom in when editing / Forward"
      :binding (if mac? "mod+." "alt+right")
      :fn      editor-handler/zoom-in!}
     :editor/zoom-out
-    {:desc    "Zoom out / Back"
+    {:desc    "Zoom out when editing / Back"
      :binding (if mac? "mod+," "alt+left")
      :fn      editor-handler/zoom-out!}
     :ui/toggle-brackets
@@ -289,10 +297,6 @@
     {:desc    "Toggle between dark/light theme"
      :binding "t t"
      :fn      state/toggle-theme!}
-    :ui/toggle-new-block
-    {:desc    "Toggle newblock/newline command for inserting newline/newblock"
-     :binding "t e"
-     :fn      state/toggle-new-block-shortcut!}
     :ui/toggle-contents
     {:desc    "Toggle Contents in sidebar"
      :binding "t c"
@@ -320,19 +324,13 @@
     :editor/new-line
     :editor/indent
     :editor/outdent
-    :editor/collapse-block-children
-    :editor/expand-block-children
     :editor/select-all-blocks
     :go/search
     :go/search-in-page
     :editor/undo
     :editor/redo
-    :editor/zoom-in
-    :editor/zoom-out
     :editor/copy
-    :editor/cut
-    :editor/toggle-open-blocks
-    :ui/toggle-wide-mode]
+    :editor/cut]
 
    :shortcut.category/formatting
    ^{:doc "Formatting"}
@@ -346,7 +344,12 @@
    [:editor/up
     :editor/down
     :editor/left
-    :editor/right]
+    :editor/right
+    :editor/zoom-in
+    :editor/zoom-out
+    :editor/collapse-block-children
+    :editor/expand-block-children
+    :editor/toggle-open-blocks]
 
    :shortcut.category/block-editing
    ^{:doc "Block editing general"}
@@ -376,7 +379,9 @@
     :editor/forward-word
     :editor/backward-word
     :editor/forward-kill-word
-    :editor/backward-kill-word]
+    :editor/backward-kill-word
+    :editor/replace-block-reference-at-point
+    :editor/paste-text-in-one-block-at-point]
 
    :shortcut.category/block-selection
    ^{:doc "Block selection (press Esc to quit selection)"}

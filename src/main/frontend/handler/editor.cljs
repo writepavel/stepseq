@@ -1,58 +1,50 @@
 (ns frontend.handler.editor
-  (:require [frontend.state :as state]
+  (:require [cljs.core.match :refer [match]]
+            [clojure.set :as set]
+            [clojure.string :as string]
             [clojure.walk :as w]
-            [lambdaisland.glogi :as log]
+            [clojure.zip :as zip]
+            [dommy.core :as dom]
+            [frontend.commands :as commands
+             :refer [*angle-bracket-caret-pos *show-block-commands *show-commands *slash-caret-pos]]
+            [frontend.config :as config]
+            [frontend.date :as date]
+            [frontend.db :as db]
+            [frontend.db-schema :as db-schema]
             [frontend.db.model :as db-model]
             [frontend.db.utils :as db-utils]
-            [frontend.db-schema :as db-schema]
+            [frontend.diff :as diff]
+            [frontend.extensions.html-parser :as html-parser]
+            [frontend.format.block :as block]
+            [frontend.format.mldoc :as mldoc]
+            [frontend.fs :as fs]
+            [frontend.handler.block :as block-handler]
             [frontend.handler.common :as common-handler]
+            [frontend.handler.image :as image-handler]
+            [frontend.handler.notification :as notification]
+            [frontend.handler.repeated :as repeated]
+            [frontend.handler.repo :as repo-handler]
             [frontend.handler.route :as route-handler]
             [frontend.handler.ui :as ui-handler]
-            [frontend.handler.repo :as repo-handler]
-            [frontend.handler.notification :as notification]
-            [frontend.handler.block :as block-handler]
-            [frontend.format.mldoc :as mldoc]
-            [frontend.format :as format]
-            [frontend.format.block :as block]
             [frontend.image :as image]
-            [frontend.db :as db]
-            [goog.object :as gobj]
+            [frontend.modules.outliner.core :as outliner-core]
+            [frontend.modules.outliner.tree :as tree]
+            [frontend.search :as search]
+            [frontend.state :as state]
+            [frontend.template :as template]
+            [frontend.text :as text]
+            [frontend.utf8 :as utf8]
+            [frontend.util :as util :refer [profile]]
+            [frontend.util.cursor :as cursor]
+            [frontend.util.marker :as marker]
+            [frontend.util.property :as property]
+            [frontend.util.thingatpt :as thingatpt]
             [goog.dom :as gdom]
             [goog.dom.classes :as gdom-classes]
-            [clojure.string :as string]
-            [clojure.set :as set]
-            [clojure.zip :as zip]
-            [frontend.util :as util :refer-macros [profile]]
-            [frontend.util.cursor :as cursor]
-            [frontend.config :as config]
-            [dommy.core :as dom]
-            [frontend.utf8 :as utf8]
-            [frontend.fs :as fs]
-            [promesa.core :as p]
-            [frontend.diff :as diff]
-            [frontend.search :as search]
-            [frontend.handler.image :as image-handler]
-            [frontend.commands :as commands
-             :refer [*show-commands
-                     *slash-caret-pos
-                     *angle-bracket-caret-pos
-                     *show-block-commands]]
-            [frontend.extensions.html-parser :as html-parser]
-            [medley.core :as medley]
-            [frontend.text :as text]
-            [frontend.util.property :as property]
-            [frontend.date :as date]
-            [frontend.handler.repeated :as repeated]
-            [frontend.template :as template]
-            [clojure.core.async :as async]
+            [goog.object :as gobj]
             [lambdaisland.glogi :as log]
-            [cljs.core.match :refer-macros [match]]
-            [frontend.modules.outliner.core :as outliner-core]
-            [frontend.db.outliner :as outliner-db]
-            [frontend.modules.outliner.tree :as tree]
-            [frontend.debug :as debug]
-            [datascript.core :as d]
-            [frontend.util.marker :as marker]))
+            [medley.core :as medley]
+            [promesa.core :as p]))
 
 ;; FIXME: should support multiple images concurrently uploading
 
@@ -293,8 +285,8 @@
                        (= :block/uuid (first x))
                        (nil? (db/entity x)))) refs))
 
-(defn- wrap-parse-block
-  [{:block/keys [content format parent left page uuid pre-block?] :as block}]
+(defn wrap-parse-block
+  [{:block/keys [content format parent left page uuid pre-block? level] :as block}]
   (let [block (or (and (:db/id block) (db/pull (:db/id block))) block)
         properties (:block/properties block)
         real-content (:block/content block)
@@ -306,7 +298,6 @@
         first-elem-type (first (ffirst ast))
         first-elem-meta (second (ffirst ast))
         properties? (contains? #{"Property_Drawer" "Properties"} first-elem-type)
-        top-level? (= parent page)
         markdown-heading? (and (= format :markdown)
                                (= "Heading" first-elem-type)
                                (nil? (:size first-elem-meta)))
@@ -338,7 +329,8 @@
         (dissoc :block/top?
                 :block/block-refs-count)
         (assoc :block/content content
-               :block/properties new-properties))))
+               :block/properties new-properties)
+        (merge (if level {:block/level level} {})))))
 
 (defn- save-block-inner!
   [repo block value {:keys [refresh?]
@@ -1004,11 +996,9 @@
         contents
         (mapv (fn [block]
                 (let [header
-                      (if (and unordered? (= format :markdown))
-                        (str (string/join (repeat (- (:level block) 1) "  ")) "-")
-                        (let [header-char (if (= format :markdown) "#" "*")
-                              init-char (if (= format :markdown) "##" "*")]
-                          (str (string/join (repeat (:level block) header-char)) init-char)))]
+                      (if (= format :markdown)
+                        (str (string/join (repeat (- (:level block) 1) "\t")) "-")
+                        (string/join (repeat (:level block) "*")))]
                   (str header " " (:block/content block) "\n")))
               level-blocks)
         content-without-properties
@@ -1305,12 +1295,13 @@
 
 (defn- get-asset-file-link
   [format url file-name image?]
-  (case (keyword format)
-    :markdown (util/format (str (when image? "!") "[%s](%s)") file-name url)
-    :org (if image?
-           (util/format "[[%s]]" url)
-           (util/format "[[%s][%s]]" url file-name))
-    nil))
+  (let [pdf? (and url (string/ends-with? url ".pdf"))]
+    (case (keyword format)
+      :markdown (util/format (str (when (or image? pdf?) "!") "[%s](%s)") file-name url)
+      :org (if image?
+             (util/format "[[%s]]" url)
+             (util/format "[[%s][%s]]" url file-name))
+      nil)))
 
 (defn- get-asset-link
   [url]
@@ -2898,8 +2889,16 @@
 
      (map (fn [x] (dissoc x :block/children))))))
 
+(defn collapsable? [block-id]
+  (if-let [block (db-model/get-block-by-uuid block-id)]
+    (and
+     (nil? (-> block :block/properties :collapsed))
+     (or (not-empty (:block/body block))
+         (db-model/has-children? block-id)))
+    false))
+
 (defn collapse-block! [block-id]
-  (when (db-model/has-children? block-id)
+  (when (collapsable? block-id)
     (set-block-property! block-id :collapsed true)))
 
 (defn expand-block! [block-id]
@@ -2960,15 +2959,13 @@
     (let [blocks-with-level
           (all-blocks-with-level {:collapse? true})
           max-level (apply max (map :block/level blocks-with-level))]
-      (loop [level (dec max-level)]
+      (loop [level max-level]
         (if (zero? level)
           nil
           (let [blocks-to-collapse
                 (->> blocks-with-level
                      (filter (fn [b] (= (:block/level b) level)))
-                     (remove (fn [b]
-                               (or (not (db-model/has-children? (:block/uuid b)))
-                                   (-> b :block/properties :collapsed)))))]
+                     (filter (fn [b] (collapsable? (:block/uuid b)))))]
             (if (empty? blocks-to-collapse)
               (recur (dec level))
               (doseq [{:block/keys [uuid]} blocks-to-collapse]
@@ -2978,8 +2975,7 @@
   []
   (let [blocks-to-collapse
         (->> (all-blocks-with-level {:collapse? true})
-             (filter (fn [b] (= (:block/level b) 1)))
-             (remove (fn [b] (-> b :block/properties :collapsed))))]
+             (filter (fn [b] (collapsable? (:block/uuid b)))))]
     (when (seq blocks-to-collapse)
       (doseq [{:block/keys [uuid]} blocks-to-collapse]
         (collapse-block! uuid)))))
@@ -2994,11 +2990,8 @@
 (defn toggle-open! []
   (let [all-collapsed?
         (->> (all-blocks-with-level {:collapse? true})
-             (filter (fn [b] (= (:block/level b) 1)))
-             (every? (fn [{:block/keys [uuid properties]}]
-                       (or
-                        (not (db-model/has-children? uuid))
-                        (some? (-> properties :collapsed))))))]
+             (filter (fn [b] (collapsable? (:block/uuid b))))
+             (empty?))]
     (if all-collapsed?
       (expand-all!)
       (collapse-all!))))
@@ -3023,3 +3016,27 @@
        (->> (:block/uuid (state/get-edit-block))
             select-block!)
        (state/clear-edit!)))))
+
+(defn replace-block-reference-with-content-at-point
+  []
+  (when-let [{:keys [content start end]} (thingatpt/block-ref-at-point)]
+    (let [block-ref-id (subs content 2 (- (count content) 2))]
+      (when-let [block (db/pull [:block/uuid (uuid block-ref-id)])]
+        (let [block-content (:block/content block)
+              format (or (:block/format block) :markdown)
+              block-content-without-prop (property/remove-properties format block-content)]
+          (when-let [input (state/get-input)]
+            (when-let [current-block-content (gobj/get input "value")]
+              (let [block-content* (str (subs current-block-content 0 start)
+                                        block-content-without-prop
+                                        (subs current-block-content end))]
+                (state/set-block-content-and-last-pos! input block-content* 1)))))))))
+
+
+(defn paste-text-in-one-block-at-point
+  []
+  (.then
+   (js/navigator.clipboard.readText)
+   (fn [clipboard-data]
+     (when-let [_ (state/get-input)]
+       (state/append-current-edit-content! clipboard-data)))))

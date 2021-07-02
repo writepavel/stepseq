@@ -31,7 +31,8 @@
             [frontend.context.i18n :as i18n]
             [reitit.frontend.easy :as rfe]
             [goog.dom :as gdom]
-            [frontend.handler.web.nfs :as nfs-handler]))
+            [frontend.handler.web.nfs :as nfs-handler]
+            [cljs-drag-n-drop.core :as dnd]))
 
 (defn nav-item
   [title href svg-d active? close-modal-fn]
@@ -105,7 +106,17 @@
     [:div.flex-1.h-0.overflow-y-auto
      (sidebar-nav route-match close-fn)]]])
 
-(rum/defc main
+(rum/defc main <
+  {:did-mount (fn [state]
+                (when-let [element (gdom/getElement "main-content")]
+                  (dnd/subscribe!
+                   element
+                   :upload-files
+                   {:drop (fn [e files]
+                            (when-let [id (state/get-edit-input-id)]
+                              (let [format (:block/format (state/get-edit-block))]
+                                (editor-handler/upload-asset id files format editor-handler/*asset-uploading? true))))}))
+                state)}
   [{:keys [route-match global-graph-pages? logged? home? route-name indexeddb-support? white? db-restoring? main-content]}]
   (ui/catch-error
    [:div#main-content-container.w-full.flex.justify-center
@@ -156,9 +167,11 @@
 (defn get-default-home-if-valid
   []
   (when-let [default-home (state/get-default-home)]
-    (when-let [page (:page default-home)]
-      (when (db/entity [:block/name (string/lower-case page)])
-        default-home))))
+    (let [page (:page default-home)
+          page (when page (db/entity [:block/name (string/lower-case page)]))]
+      (if page
+        default-home
+        (dissoc default-home :page)))))
 
 (defonce sidebar-inited? (atom false))
 ;; TODO: simplify logic
@@ -198,7 +211,8 @@
        (cond
          (and default-home
               (= :home (state/get-current-route))
-              (not (state/route-has-p?)))
+              (not (state/route-has-p?))
+              (:page default-home))
          (route-handler/redirect! {:to :page
                                    :path-params {:name (:page default-home)}})
 
@@ -250,11 +264,15 @@
 
 (rum/defc new-block-mode < rum/reactive
   []
-  (when (state/sub [:editor/new-block-toggle?])
-    [:a.px-1.text-sm.font-medium.bg-base-2.mr-4.rounded-md
-     {:title "Click to switch to \"Enter\" for creating new block"
-      :on-click state/toggle-new-block-shortcut!}
-     "A"]))
+  (when (state/sub [:document/mode?])
+    (ui/tippy {:html [:div.p-2
+                      [:p.mb-2 [:b "Document mode"]]
+                      [:ul
+                       [:li "Shift + Enter to create new block"]
+                       [:li "Click `D` or type `t d` to toggle document mode"]]]}
+     [:a.px-1.text-sm.font-medium.bg-base-2.mr-4.rounded-md
+      {:on-click state/toggle-document-mode!}
+      "D"])))
 
 (rum/defc help-button < rum/reactive
   []
@@ -267,20 +285,16 @@
                     (state/sidebar-add-block! (state/get-current-repo) "help" :help nil))}
        "?"])))
 
-(rum/defc settings-modal
-  [settings-open?]
-  (rum/use-effect!
-   (fn []
-     (if settings-open?
-       (state/set-modal!
-        (fn [close-fn]
-          (gobj/set close-fn "user-close" #(ui-handler/toggle-settings-modal!))
-          [:div.settings-modal (settings/settings)]))
-       (state/set-modal! nil))
-
-     (util/lock-global-scroll settings-open?)
-     #())
-   [settings-open?]) nil)
+(rum/defc settings-modal < rum/reactive
+  []
+  (let [settings-open? (state/sub :ui/settings-open?)]
+    (if settings-open?
+      (do
+        (state/set-modal!
+         (fn [] [:div.settings-modal (settings/settings)]))
+        (util/lock-global-scroll settings-open?))
+      (state/set-modal! nil))
+    nil))
 
 (rum/defcs sidebar <
   (mixins/modal :modal/show?)
@@ -303,7 +317,6 @@
         theme (state/sub :ui/theme)
         system-theme? (state/sub :ui/system-theme?)
         white? (= "white" (state/sub :ui/theme))
-        settings-open? (state/sub :ui/settings-open?)
         sidebar-open?  (state/sub :ui/sidebar-open?)
         route-name (get-in route-match [:data :name])
         global-graph-pages? (= :graph route-name)
@@ -359,7 +372,7 @@
 
         (ui/notification)
         (ui/modal)
-        (settings-modal settings-open?)
+        (settings-modal)
         (custom-context-menu)
         [:a#download.hidden]
         (when

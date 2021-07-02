@@ -4,16 +4,15 @@
   It'll be great if we can find an automatically resolving and performant
   solution.
   "
-  (:require [frontend.db.conn :as conn]
-            [frontend.state :as state]
-            [frontend.date :as date]
-            [frontend.util :as util :refer-macros [profile] :refer [react]]
-            [frontend.util.marker :as marker]
-            [clojure.string :as string]
-            [frontend.config :as config]
+  (:require [clojure.string :as string]
             [datascript.core :as d]
-            [lambdaisland.glogi :as log]
-            [frontend.db.utils :as db-utils]))
+            [frontend.config :as config]
+            [frontend.date :as date]
+            [frontend.db.conn :as conn]
+            [frontend.db.utils :as db-utils]
+            [frontend.state :as state]
+            [frontend.util :as util :refer [profile react]]
+            [frontend.util.marker :as marker]))
 
 ;; Query atom of map of Key ([repo q inputs]) -> atom
 ;; TODO: replace with LRUCache, only keep the latest 20 or 50 items?
@@ -294,28 +293,26 @@
         (when-let [cache (get @query-state related-key)]
           (let [{:keys [query inputs transform-fn query-fn inputs-fn]} cache]
             (when (or query query-fn)
-              (let [new-result (profile
-                                "takes"
-                                (->
-                                 (cond
-                                   query-fn
-                                   (profile
-                                    "Query:"
-                                    (doall (query-fn db)))
+              (let [new-result (->
+                                (cond
+                                  query-fn
+                                  (profile
+                                   "Query:"
+                                   (doall (query-fn db)))
 
-                                   inputs-fn
-                                   (let [inputs (inputs-fn)]
-                                     (apply d/q query db inputs))
+                                  inputs-fn
+                                  (let [inputs (inputs-fn)]
+                                    (apply d/q query db inputs))
 
-                                   (keyword? query)
-                                   (db-utils/get-key-value repo-url query)
+                                  (keyword? query)
+                                  (db-utils/get-key-value repo-url query)
 
-                                   (seq inputs)
-                                   (apply d/q query db inputs)
+                                  (seq inputs)
+                                  (apply d/q query db inputs)
 
-                                   :else
-                                   (d/q query db))
-                                 transform-fn))]
+                                  :else
+                                  (d/q query db))
+                                transform-fn)]
                 (set-new-result! related-key new-result)))))))))
 
 (defn transact-react!

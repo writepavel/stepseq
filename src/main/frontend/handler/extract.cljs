@@ -115,7 +115,7 @@
                                                              (remove string/blank?))]
                                                (swap! ref-tags set/union (set tags))
                                                (map (fn [tag] {:block/name (string/lower-case tag)
-                                                               :block/original-name tag})
+                                                              :block/original-name tag})
                                                  tags)))))
           pages (->> (concat
                       [page-entity]
@@ -152,6 +152,10 @@
            first-block (ffirst ast)
            properties (let [properties (and (property/properties-ast? first-block)
                                             (->> (last first-block)
+                                                 (map (fn [[x y]]
+                                                        [x (if (string? y)
+                                                             (property/parse-property x y)
+                                                             y)]))
                                                  (into {})
                                                  (walk/keywordize-keys)))]
                         (when (and properties (seq properties))

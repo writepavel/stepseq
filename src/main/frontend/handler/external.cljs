@@ -13,7 +13,6 @@
             [frontend.handler.page :as page]
             [frontend.handler.editor :as editor]))
 
-(defonce debug-files (atom nil))
 (defn index-files!
   [repo files finish-handler]
   (let [titles (->> files
@@ -35,8 +34,7 @@
                            {:file/path path
                             :file/content text}))))
                    files)
-        files (remove nil? files)
-        _ (reset! debug-files files)]
+        files (remove nil? files)]
     (repo-handler/parse-files-and-load-to-db! repo files nil)
     (let [files (map (fn [{:file/keys [path content]}] [path content]) files)]
       (file-handler/alter-files repo files {:add-history? false
@@ -69,7 +67,9 @@
   [data finished-ok-handler]
   (when-let [repo (state/get-current-repo)]
     (let [[headers parsed-blocks] (mldoc/opml->edn data)
-          parsed-blocks (block/extract-blocks parsed-blocks "" true :markdown) ; TODO: only support md in opml's text attr yet
+          parsed-blocks (->>
+                          (block/extract-blocks parsed-blocks "" true :markdown)
+                          (mapv editor/wrap-parse-block))
           page-name (:title headers)]
       (when (not (page/page-exists? page-name))
         (page/create! page-name {:redirect? false}))

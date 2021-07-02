@@ -1,12 +1,13 @@
 (ns frontend.components.page
   (:require [rum.core :as rum]
-            [frontend.util :as util :refer-macros [profile]]
+            [frontend.util :as util :refer [profile]]
             [frontend.util.marker :as marker]
             [frontend.tools.html-export :as html-export]
-            [frontend.handler.file :as file]
             [frontend.handler.page :as page-handler]
             [frontend.handler.ui :as ui-handler]
             [frontend.handler.common :as common-handler]
+            [frontend.commands :as commands]
+            [frontend.handler.plugin :as plugin-handler]
             [frontend.handler.route :as route-handler]
             [frontend.handler.graph :as graph-handler]
             [frontend.handler.notification :as notification]
@@ -20,6 +21,7 @@
             [frontend.components.svg :as svg]
             [frontend.components.export :as export]
             [frontend.extensions.graph-2d :as graph-2d]
+            [frontend.components.hierarchy :as hierarchy]
             [frontend.ui :as ui]
             [frontend.components.content :as content]
             [frontend.config :as config]
@@ -203,6 +205,7 @@
 
        [:input.form-input.block.w-full.sm:text-sm.sm:leading-5.my-2
         {:auto-focus true
+         :default-value title
          :on-change (fn [e]
                       (reset! input (util/evalue e)))}]
 
@@ -270,10 +273,6 @@
                                               :block/original-name path-page-name
                                               :block/uuid (db/new-block-id)}]))
                        (db/pull [:block/name page-name])))
-              _ (when (and (not block?) (db/page-empty? (state/get-current-repo) (:db/id page)))
-                  (page-handler/create! page-name {:page-map page
-                                                   :redirect? false
-                                                   :create-first-block? false}))
               {:keys [title] :as properties} (:block/properties page)
               page-name (:block/name page)
               page-original-name (:block/original-name page)
@@ -352,6 +351,12 @@
                                                      (if public? false true))
                                                     (state/close-modal!))}})
 
+                                     (when plugin-handler/lsp-enabled?
+                                       (for [[_ {:keys [key label] :as cmd} action pid] (state/get-plugins-commands-with-type :page-menu-item)]
+                                         {:title label
+                                          :options {:on-click #(commands/exec-plugin-simple-command!
+                                                                 pid (assoc cmd :page (state/get-current-page)) action)}}))
+
                                      (when developer-mode?
                                        {:title   "(Dev) Show page data"
                                         :options {:on-click (fn []
@@ -368,11 +373,16 @@
                                     (flatten)
                                     (remove nil?)))]
                    [:div.flex.flex-row
-                    (plugins/hook-ui-slot :page-head-actions-slotted nil)
+
+                    (when plugin-handler/lsp-enabled?
+                      (plugins/hook-ui-slot :page-head-actions-slotted nil)
+                      (plugins/hook-ui-items :pagebar))
+
                     [:a.opacity-60.hover:opacity-100.page-op.mr-1
                      {:title "Search in current page"
                       :on-click #(route-handler/go-to-search! :page)}
                      svg/search]
+
                     (ui/dropdown-with-links
                      (fn [{:keys [toggle-fn]}]
                        [:a.cp__vertical-menu-button
@@ -406,6 +416,9 @@
             (rum/with-key
               (reference/references route-page-name false)
               (str route-page-name "-refs"))]
+
+           (when (text/namespace-page? route-page-name)
+             (hierarchy/structures route-page-name))
 
            ;; TODO: or we can lazy load them
            (when-not sidebar?

@@ -175,6 +175,10 @@
     [:div.help.cp__sidebar-help-docs
      [:ul
       [:li
+       [:a {:href "https://logseq.github.io/#/page/getting%20started"
+            :target "_blank"}
+        (t :help/start)]]
+      [:li
        [:a {:href "https://logseq.com/blog/about"
             :target "_blank"}
         (t :help/about)]]
@@ -222,9 +226,9 @@
          svg/discord]]]
       [:li
        (t :help/shortcuts)
-       [:br]
        (ui/button
-        "Learn more"
+        "Customize"
+        :class "text-sm p-1 ml-3"
         :on-click
         (fn []
           (route-handler/redirect! {:to :shortcut})))

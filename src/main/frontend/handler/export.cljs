@@ -8,13 +8,13 @@
             [frontend.config :as config]
             [frontend.db :as db]
             [frontend.extensions.zip :as zip]
+            [frontend.external.roam-export :as roam-export]
             [frontend.format :as f]
             [frontend.format.protocol :as fp]
             [frontend.handler.common :as common-handler]
             [frontend.handler.file :as file-handler]
             [frontend.modules.file.core :as outliner-file]
             [frontend.modules.outliner.tree :as outliner-tree]
-            [frontend.external.roam-export :as roam-export]
             [frontend.publishing.html :as html]
             [frontend.state :as state]
             [frontend.util :as util]
@@ -59,6 +59,13 @@
   (->
    (db/get-block-and-children repo root-block-uuid)
    (outliner-tree/blocks->vec-tree (str root-block-uuid))
+   (outliner-file/tree->file-content {:init-level 1})))
+
+(defn- get-block-content
+  [repo block]
+  (->
+   [block]
+   (outliner-tree/blocks->vec-tree (str (:block/uuid block)))
    (outliner-file/tree->file-content {:init-level 1})))
 
 (defn copy-block!
@@ -258,7 +265,7 @@
         embed-blocks
         (mapv (fn [b] [(str (:block/uuid b))
                        [(get-blocks-contents repo (:block/uuid b))
-                        (:block/content b)]])
+                        (get-block-content repo b)]])
               blocks)]
     {:embed_blocks embed-blocks
      :embed_pages pages-name-and-content}))
@@ -405,7 +412,7 @@
      (mapv (fn [[_title content uuid id]]
              [(str uuid)
               [(get-blocks-contents repo uuid)
-               content]])
+               (get-block-content repo (db/pull id))]])
            block-refs)
      :embed_pages (vec page-refs)}))
 
@@ -614,6 +621,7 @@
          [:block/id
           :block/page-name
           :block/properties
+          :block/heading-level
           :block/format
           :block/children
           :block/title

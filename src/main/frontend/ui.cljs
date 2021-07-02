@@ -80,7 +80,7 @@
 
 (rum/defc menu-link
   [options child]
-  [:a.block.px-4.py-2.text-sm.text-gray-700.transition.ease-in-out.duration-150.cursor.menu-link
+  [:a.block.px-4.py-2.text-sm.transition.ease-in-out.duration-150.cursor.menu-link
    options
    child])
 
@@ -386,8 +386,18 @@
       {:class       (if on? (if small? "translate-x-4" "translate-x-5") "translate-x-0")
        :aria-hidden "true"}]]]))
 
-(defn apply-close-fn [close-fn]
-  (fn [] (apply (or (gobj/get close-fn "user-close") close-fn) [])))
+;; `sequence` can be a list of symbols or strings
+(defn keyboard-shortcut [sequence]
+  [:div.keyboard-shortcut
+   (map-indexed (fn [i key]
+          [:code {:key i}
+           ;; Display "cmd" rather than "meta" to the user to describe the Mac
+           ;; mod key, because that's what the Mac keyboards actually say.
+           (if (or (= :meta key) (= "meta" key))
+             (util/meta-key-name)
+             (name key))])
+        sequence)]
+  )
 
 (defonce modal-show? (atom false))
 (rum/defc modal-overlay
@@ -398,7 +408,7 @@
              "entered" "ease-out duration-300 opacity-100"
              "exiting" "ease-in duration-200 opacity-100"
              "exited" "ease-in duration-200 opacity-0")
-    :on-click (apply-close-fn close-fn)}
+    :on-click close-fn}
    [:div.absolute.inset-0.opacity-75]])
 
 (rum/defc modal-panel
@@ -446,7 +456,9 @@
   (let [modal-panel-content (state/sub :modal/panel-content)
         fullscreen? (state/sub :modal/fullscreen?)
         show? (boolean modal-panel-content)
-        close-fn #(state/close-modal!)
+        close-fn (fn []
+                   (state/close-modal!)
+                   (state/close-settings!))
         modal-panel-content (or modal-panel-content (fn [close] [:div]))]
     [:div.ui__modal
      {:style {:z-index (if show? 10 -1)}}
@@ -513,6 +525,12 @@
    [:span.icon.flex.items-center svg/loading]
    [:span.text.pl-2 content]])
 
+(rum/defc rotating-arrow
+  [collapsed?]
+  [:span
+   {:class (if collapsed? "rotating-arrow collapsed" "rotating-arrow not-collapsed")}
+   (svg/caret-right)])
+
 (rum/defcs foldable <
   (rum/local false ::control?)
   (rum/local false ::collapsed?)
@@ -536,29 +554,13 @@
           :on-click (fn [e]
                       (util/stop e)
                       (swap! collapsed? not))}
-         (cond
-           @collapsed?
-           (svg/caret-right)
-
-           @control?
-           (svg/caret-down)
-
-           :else
-           [:span ""])]
+         [:span {:class (if @control? "control-show" "control-hide")} (rotating-arrow @collapsed?)]]
         (if (fn? header)
           (header @collapsed?)
           header)]]]
-     [:div {:class (if @collapsed?
-                     "hidden"
-                     "initial")}
-      (cond
-        (and (fn? content) (not @collapsed?))
-        (content)
-
-        (fn? content)
-        nil
-
-        :else
+     [:div {:class (if @collapsed? "hidden" "initial")}
+      (if (fn? content)
+        (if (not @collapsed?) (content) nil)
         content)]]))
 
 (defn admonition
@@ -612,19 +614,19 @@
   (let [*mounted? (::mounted? state)
         mounted? @*mounted?]
     (Tippy (->
-           (merge {:arrow true
-                   :sticky true
-                   :theme (:ui/theme @state/state)
-                   :disabled (not (state/enable-tooltip?))
-                   :unmountHTMLWhenHide true
-                   :open @*mounted?
-                   :onShow #(reset! *mounted? true)
-                   :onHide #(reset! *mounted? false)}
-                  opts)
-           (assoc :html (if mounted?
-                          (when-let [html (:html opts)]
-                            (if (fn? html)
-                              (html)
-                              html))
-                          [:div ""])))
-          child)))
+            (merge {:arrow true
+                    :sticky true
+                    :theme "customized"
+                    :disabled (not (state/enable-tooltip?))
+                    :unmountHTMLWhenHide true
+                    :open @*mounted?
+                    :onShow #(reset! *mounted? true)
+                    :onHide #(reset! *mounted? false)}
+                   opts)
+            (assoc :html (if mounted?
+                           (when-let [html (:html opts)]
+                             (if (fn? html)
+                               (html)
+                               html))
+                           [:div {:key "tippy"} ""])))
+           child)))

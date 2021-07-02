@@ -1,10 +1,11 @@
 (ns frontend.db-schema)
 
 (defonce version "0.0.2")
-
+(defonce ast-version "0.0.1")
 ;; A page is a special block, a page can corresponds to multiple files with the same ":block/name".
 (def schema
   {:schema/version  {}
+   :ast/version     {}
    :db/type         {}
    :db/ident        {:db/unique :db.unique/identity}
 
@@ -74,6 +75,9 @@
    ;; first block that's not a heading or unordered list
    :block/pre-block? {}
 
+   ;; heading's level (the block must be a heading)
+   :block/heading-level {}
+
    ;; scheduled day
    :block/scheduled {}
 
@@ -94,6 +98,8 @@
    ;; whether page's is a journal
    :block/journal? {}
    :block/journal-day {}
+   ;; page's namespace
+   :block/namespace {:db/valueType :db.type/ref}
 
    ;; block's file
    :block/file {:db/valueType :db.type/ref}

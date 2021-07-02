@@ -4,7 +4,9 @@
             [frontend.modules.outliner.core :as outliner-core]
             [frontend.modules.outliner.tree :as tree]
             [lambdaisland.glogi :as log]
-            [frontend.debug :as debug]))
+            [frontend.debug :as debug]
+            [frontend.handler.editor :as editor-handler]
+            [frontend.util :as util]))
 
 
 (defn- moveable?
@@ -32,25 +34,42 @@
      we don't handle this now. TODO: transform between different formats in mldoc.
   2. Sometimes we might need to move a parent block to it's own child.
   "
-  [current-block target-block top? nested?]
-  (when (and (every? map? [current-block target-block])
-             (moveable? current-block target-block))
-    (let [[current-node target-node]
-          (mapv outliner-core/block [current-block target-block])]
-      (cond
-        top?
-        (let [first-child?
-              (= (tree/-get-parent-id target-node)
-                (tree/-get-left-id target-node))]
-          (if first-child?
-            (let [parent (tree/-get-parent target-node)]
-              (outliner-core/move-subtree current-node parent false))
-            (outliner-core/move-subtree current-node target-node true)))
-        nested?
-        (outliner-core/move-subtree current-node target-node false)
-
-        :else
-        (outliner-core/move-subtree current-node target-node true))
-      (let [repo (state/get-current-repo)]
+  [^js event current-block target-block move-to]
+  (let [top? (= move-to :top)
+        nested? (= move-to :nested)
+        alt-key? (.-altKey event)
+        repo (state/get-current-repo)]
+    (cond
+      alt-key?
+      (do
+        (editor-handler/api-insert-new-block!
+         (util/format "((%s))" (str (:block/uuid current-block)))
+         {:block-uuid (:block/uuid target-block)
+          :sibling? (not nested?)
+          :before? top?})
         (db/refresh! repo {:key :block/change
-                           :data [(:data current-node) (:data target-node)]})))))
+                           :data [current-block target-block]}))
+
+      (and (every? map? [current-block target-block])
+           (moveable? current-block target-block))
+      (let [[current-node target-node]
+            (mapv outliner-core/block [current-block target-block])]
+        (cond
+          top?
+          (let [first-child?
+                (= (tree/-get-parent-id target-node)
+                   (tree/-get-left-id target-node))]
+            (if first-child?
+              (let [parent (tree/-get-parent target-node)]
+                (outliner-core/move-subtree current-node parent false))
+              (outliner-core/move-subtree current-node target-node true)))
+          nested?
+          (outliner-core/move-subtree current-node target-node false)
+
+          :else
+          (outliner-core/move-subtree current-node target-node true))
+        (db/refresh! repo {:key :block/change
+                           :data [(:data current-node) (:data target-node)]}))
+
+      :else
+      nil)))

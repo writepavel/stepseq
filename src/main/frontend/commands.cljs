@@ -7,6 +7,7 @@
             [frontend.state :as state]
             [frontend.search :as search]
             [frontend.config :as config]
+            [frontend.db.utils :as db-util]
             [frontend.db :as db]
             [clojure.string :as string]
             [goog.dom :as gdom]
@@ -248,6 +249,8 @@
     ;; advanced
 
     [["Query" [[:editor/input "{{query }}" {:backward-pos 2}]] "Create a DataScript query"]
+     ["Calculator" [[:editor/input "```calc\n\n```" {:backward-pos 4}]
+                    [:codemirror/focus]] "Insert a calculator"]
      ["Draw" (fn []
                (let [file (draw/file-name)
                      path (str config/default-draw-directory "/" file)
@@ -268,7 +271,8 @@
                                                         :backward-pos 2}]]]]
 
     ;; Allow user to modify or extend, should specify how to extend.
-    (state/get-commands))
+    (state/get-commands)
+    (state/get-plugins-commands))
    (remove nil?)
    (util/distinct-by-last-wins first)))
 
@@ -561,3 +565,9 @@
   [vector format]
   (doseq [step vector]
     (handle-step step format)))
+
+(defn exec-plugin-simple-command!
+  [pid {:keys [key label block-id] :as cmd} action]
+  (let [format (and block-id (:block/format (db-util/pull [:block/uuid block-id])))
+        inputs (vector (conj action (assoc cmd :pid pid)))]
+    (handle-steps inputs format)))

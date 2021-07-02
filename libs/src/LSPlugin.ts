@@ -170,6 +170,7 @@ export interface IAppProxy {
   // native
   relaunch: () => Promise<void>
   quit: () => Promise<void>
+  openExternalLink: (url: string) => Promise<void>
 
   // graph
   getCurrentGraph: () => Promise<AppGraphInfo | null>
@@ -181,6 +182,16 @@ export interface IAppProxy {
   // ui
   showMsg: (content: string, status?: 'success' | 'warning' | string) => void
   setZoomFactor: (factor: number) => void
+
+  registerUIItem: (
+    type: 'toolbar' | 'pagebar',
+    opts: { key: string, template: string }
+  ) => boolean
+
+  registerPageMenuItem: (
+    tag: string,
+    action: (e: IHookEvent & { page: string }) => void
+  ) => unknown
 
   // events
   onCurrentGraphChanged: IUserHook
@@ -226,10 +237,10 @@ export interface IEditorProxy extends Record<string, any> {
    * @param tag - displayed name of command
    * @param action - can be a single callback function to run when the command is called
    */
-  registerBlockContextMenu: (
+  registerBlockContextMenuItem: (
     tag: string,
     action: BlockCommandCallback
-  ) => boolean
+  ) => unknown
 
   // block related APIs
 

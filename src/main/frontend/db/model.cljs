@@ -1,26 +1,19 @@
 (ns frontend.db.model
   "Core db functions."
-  (:require [frontend.db.conn :as conn]
-            [frontend.db.utils :as db-utils]
-            [frontend.db.react :as react]
+  (:require [clojure.set :as set]
+            [clojure.string :as string]
+            [clojure.walk :as walk]
             [datascript.core :as d]
+            [frontend.config :as config]
             [frontend.date :as date]
-            [medley.core :as medley]
+            [frontend.db-schema :as db-schema]
+            [frontend.db.conn :as conn]
+            [frontend.db.react :as react]
+            [frontend.db.utils :as db-utils]
             [frontend.format :as format]
             [frontend.state :as state]
-            [clojure.string :as string]
-            [clojure.set :as set]
-            [frontend.utf8 :as utf8]
-            [frontend.config :as config]
-            [cljs.reader :as reader]
-            [cljs-time.core :as t]
-            [cljs-time.coerce :as tc]
-            [frontend.util :as util :refer [react] :refer-macros [profile]]
-            [debux.cs.core :as dbx :refer-macros [clog clogn dbg dbgn break
-                                                  clog_ clogn_ dbg_ dbgn_ break_]]
-            [frontend.db-schema :as db-schema]
-            [clojure.walk :as walk]
-            [clojure.string :as string]))
+            [frontend.util :as util :refer [react]]
+            [medley.core :as medley]))
 
 ;; TODO: extract to specific models and move data transform logic to the
 ;; correponding handlers.
@@ -489,23 +482,6 @@
      (let [datoms (d/datoms db :avet :block/page page-id)]
        (and (= (count datoms) 1)
             (= "" (:block/content (db-utils/pull (:e (first datoms))))))))))
-
-
-(comment
-
-
-  (defn get-block-parent-by-id
-        [repo block-id]
-        (when-let [conn (conn/get-conn repo)]
-                  (d/entity conn [:block/children block-id])))
-
-  (defn get-block-parent
-        [repo block-uuid]
-        (when-let [conn (conn/get-conn repo)]
-                  (when-let [block (d/entity conn [:block/uuid block-uuid])]
-                            (d/entity conn [:block/children (:db/id block)]))))
-
-  )
 
 (defn get-block-parent
   ([block-id]
@@ -990,19 +966,29 @@
                (sort-by-left-recursive)
                db-utils/group-by-page))))))
 
+(defn- pattern [name]
+  (re-pattern (str "(?i)(?<!#)(?<!\\[\\[)"
+                   (util/regex-escape name)
+                   "(?!\\]\\])")))
+
 (defn get-page-unlinked-references
   [page]
   (when-let [repo (state/get-current-repo)]
     (when-let [conn (conn/get-conn repo)]
-      (let [page-id (:db/id (db-utils/entity [:block/name page]))
-            pattern (re-pattern (str "(?i)(?<!#)(?<!\\[\\[)" (util/regex-escape page) "(?!\\]\\])"))]
+      (let [page-id     (:db/id (db-utils/entity [:block/name page]))
+            alias-names (get-page-alias-names repo page)
+            patterns    (->> (conj alias-names page)
+                             (map pattern))
+            filter-fn   (fn [datom]
+                          (some (fn [p] (re-find p (:v datom))) patterns))]
         (->> (react/q repo [:block/unlinked-refs page-id]
-               {:query-fn (fn [db]
-                            (let [ids (->> (d/datoms db :aevt :block/content)
-                                           (filter #(re-find pattern (:v %)))
-                                           (map :e))
-                                  result (d/pull-many db block-attrs ids)]
-                              (remove (fn [block] (= page-id (:db/id (:block/page block)))) result)))}
+                      {:query-fn (fn [db]
+                                   (let [ids
+                                         (->> (d/datoms db :aevt :block/content)
+                                              (filter filter-fn)
+                                              (map :e))
+                                         result (d/pull-many db block-attrs ids)]
+                                     (remove (fn [block] (= page-id (:db/id (:block/page block)))) result)))}
                nil)
              react
              (sort-by-left-recursive)
@@ -1281,3 +1267,22 @@
            (conn/get-conn repo)
            page-id)
       ffirst))
+
+(defn get-namespace-pages
+  [repo namespace]
+  (assert (string? namespace))
+  (let [db (conn/get-conn repo)]
+    (when-not (string/blank? namespace)
+      (let [namespace (string/lower-case (string/trim namespace))
+            ids (->> (d/datoms db :aevt :block/name)
+                     (filter (fn [datom]
+                               (let [page (:v datom)]
+                                 (or
+                                  (= page namespace)
+                                  (string/starts-with? page (str namespace "/"))))))
+                     (map :e))]
+        (when (seq ids)
+          (db-utils/pull-many repo
+                              '[:db/id :block/name :block/original-name
+                                {:block/file [:db/id :file/path]}]
+                              ids))))))

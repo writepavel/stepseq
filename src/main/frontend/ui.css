@@ -85,7 +85,7 @@
 
     .panel-content {
       overflow-y: auto;
-      max-height: 80vh;
+      max-height: 85vh;
       max-width: 768px;
       padding: 2rem;
     }
@@ -133,6 +133,10 @@
     &:hover {
       color: var(--ls-link-text-color);
     }
+  }
+
+  &.p-1 {
+    padding: 0.25rem 0.5rem !important;
   }
 }
 
@@ -182,4 +186,12 @@
   &.is-small {
     @apply py-1.5 sm:leading-4 sm:text-xs;
   }
+}
+
+.rotating-arrow.not-collapsed svg {
+  transform: rotate(90deg);
+}
+
+.rotating-arrow svg {
+  transition: all 100ms ease-in 0ms;
 }

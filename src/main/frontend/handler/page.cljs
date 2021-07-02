@@ -3,7 +3,7 @@
             [frontend.db :as db]
             [datascript.core :as d]
             [frontend.state :as state]
-            [frontend.util :as util :refer-macros [profile]]
+            [frontend.util :as util :refer [profile]]
             [frontend.util.cursor :as cursor]
             [frontend.config :as config]
             [frontend.handler.common :as common-handler]
@@ -69,30 +69,35 @@
 (defn create!
   ([title]
    (create! title {}))
-  ([title {:keys [redirect? page-map create-first-block?]
+  ([title {:keys [redirect? create-first-block?]
            :or {redirect? true
                 create-first-block? true}}]
    (let [title (string/trim title)
+         pages (util/split-namespace-pages title)
          page (string/lower-case title)
          format (state/get-preferred-format)
-         tx (if page-map
-              page-map
-              (-> (block/page-name->map title true)
-                  (assoc :block/format format)))
-         page-entity (if (:block/uuid tx)
-                       [:block/uuid (:block/uuid tx)]
-                       (:db/id tx))
-         create-title-property? (util/create-title-property? title)
-         default-properties (default-properties-block title format page-entity)
-         txs (if create-title-property?
-               [tx default-properties]
-               [tx])]
+         pages (map (fn [page]
+                      (-> (block/page-name->map page true)
+                          (assoc :block/format format)))
+                 pages)
+         txs (->>
+              (mapcat
+               (fn [page]
+                 (when (:block/uuid page)
+                   (let [page-entity [:block/uuid (:block/uuid page)]
+                         create-title-property? (util/create-title-property? (:block/name page))]
+                     (if create-title-property?
+                       (let [default-properties (default-properties-block (:block/original-name page) format page-entity)]
+                         [page default-properties])
+                       [page]))))
+               pages)
+              (remove nil?))]
      (db/transact! txs)
      (when create-first-block?
        (editor-handler/insert-first-page-block-if-not-exists! page))
      (when redirect?
-      (route-handler/redirect! {:to :page
-                                :path-params {:name page}})))))
+       (route-handler/redirect! {:to :page
+                                 :path-params {:name page}})))))
 
 (defn page-add-property!
   [page-name key value]
@@ -203,6 +208,16 @@
         parts (concat (butlast result) [new-file])]
     (string/join "/" parts)))
 
+(defn- rename-file-aux!
+  [repo old-path new-path]
+  (fs/rename! repo
+              (if (util/electron?)
+                old-path
+                (str (config/get-repo-dir repo) "/" old-path))
+              (if (util/electron?)
+                new-path
+                (str (config/get-repo-dir repo) "/" new-path))))
+
 (defn rename-file!
   [file new-name ok-handler]
   (let [repo (state/get-current-repo)
@@ -213,13 +228,7 @@
     (db/transact! repo [{:db/id (:db/id file)
                          :file/path new-path}])
     (->
-     (p/let [_ (fs/rename! repo
-                           (if (util/electron?)
-                             old-path
-                             (str (config/get-repo-dir repo) "/" old-path))
-                           (if (util/electron?)
-                             new-path
-                             (str (config/get-repo-dir repo) "/" new-path)))
+     (p/let [_ (rename-file-aux! repo old-path new-path)
              _ (when-not (config/local-db? repo)
                  (git/rename repo old-path new-path))]
        (common-handler/check-changed-files-status)
@@ -228,19 +237,80 @@
                 (println "file rename failed: " error))))))
 
 ;; FIXME: not safe
+;; 1. normal pages [[foo]]
+;; 2. namespace pages [[foo/bar]]
+;; 3. what if there's a tag `#foobar` and we want to replace `#foo` with `#something`?
 (defn- replace-old-page!
   [s old-name new-name]
-  (-> s
-      (string/replace (util/format "[[%s]]" old-name) (util/format "[[%s]]" new-name))
-      (string/replace (str "#" old-name) (str "#" new-name))))
+  (let [get-tag-pattern (fn [s] (if (string/includes? s " ")
+                                 (str "#[[" s "]]")
+                                 (str "#" s)))
+        old-tag-pattern (get-tag-pattern old-name)
+        new-tag-pattern (get-tag-pattern new-name)]
+    (let [pattern "[[%s/"]
+     (-> s
+         (string/replace (util/format "[[%s]]" old-name) (util/format "[[%s]]" new-name))
+         (string/replace (util/format pattern old-name) (util/format pattern new-name))
+         (string/replace old-tag-pattern new-tag-pattern)))))
 
 (defn- walk-replace-old-page!
   [form old-name new-name]
-  (walk/postwalk (fn [f] (if (string? f)
-                          (if (= f old-name)
-                            new-name
-                            (replace-old-page! f old-name new-name))
-                           f)) form))
+  (walk/postwalk (fn [f]
+                   (cond
+                     (and (vector? f)
+                          (contains? #{"Search" "Label"} (first f))
+                          (string/starts-with? (second f) (str old-name "/")))
+                     [(first f) (string/replace-first (second f)
+                                                      (str old-name "/")
+                                                      (str new-name "/"))]
+
+                     (string? f)
+                     (if (= f old-name)
+                       new-name
+                       (replace-old-page! f old-name new-name))
+
+                     :else
+                     f))
+                 form))
+
+(defn- build-new-namespace-page-title
+  [old-page-title old-name new-name]
+  (string/replace-first old-page-title old-name new-name))
+
+(defn- get-new-file-path
+  [old-path old-name new-name]
+  (let [path-old-name (string/replace old-name "/" ".")
+        path-new-name (string/replace new-name "/" ".")
+        [search replace] (cond
+                           (string/includes? old-path (str "." path-old-name "."))
+                           [(str "." path-old-name ".") (str "." path-new-name ".")]
+
+                           (string/includes? old-path (str "/" path-old-name "."))
+                           [(str "/" path-old-name ".") (str "/" path-new-name ".")]
+
+                           :else
+                           [(str path-old-name ".") (str path-new-name ".")])]
+    (string/replace-first old-path search replace)))
+
+(defn- rename-namespace-pages!
+  [repo old-name new-name]
+  (let [pages (db/get-namespace-pages repo old-name)]
+    (doseq [{:block/keys [name original-name file] :as page} pages]
+      (let [old-page-title (or original-name name)
+            new-page-title (build-new-namespace-page-title old-page-title old-name new-name)
+            page-tx {:db/id (:db/id page)
+                     :block/original-name new-page-title
+                     :block/name (string/lower-case new-page-title)}
+            old-path (:file/path file)
+            new-path (when old-path
+                       (get-new-file-path old-path old-name new-name))
+            file-tx (when file
+                      {:db/id (:db/id file)
+                       :file/path new-path})
+            txs (->> [file-tx page-tx] (remove nil?))]
+        (db/transact! repo txs)
+        (p/let [_ (rename-file-aux! repo old-path new-path)]
+          (println "Renamed " old-path " to " new-path))))))
 
 (defn rename!
   [old-name new-name]
@@ -307,6 +377,8 @@
                         (outliner-file/sync-to-file page-id)))
 
                     (outliner-file/sync-to-file page))
+
+                  (rename-namespace-pages! repo old-name new-name)
 
                   ;; TODO: update browser history, remove the current one
 

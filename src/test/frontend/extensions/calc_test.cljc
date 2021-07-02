@@ -4,7 +4,7 @@
 
 (defn run [expr]
   {:pre [(string? expr)]}
-  (first (calc/eval (calc/parse expr))))
+  (calc/eval (calc/parse expr)))
 
 (deftest basic-arithmetic
   (testing "numbers are parsed as expected"
@@ -14,7 +14,15 @@
       98123      "98123"
       1.0        " 1.0 "
       22.1124131 "22.1124131"
-      100.01231  " 100.01231 "))
+      100.01231  " 100.01231 ")
+    (testing "even when they have the commas in the wrong place"
+      (are [value expr] (= value (run expr))
+        98123      "9812,3"
+        98123      "98,123"
+        98123      "9,8,123"
+        1123.0     " 112,3.0 "
+        22.1124131 "2,2.1124131"
+        100.01231  " 1,00.01231 ")))
   (testing "basic operations work"
     (are [value expr] (= value (run expr))
       1             "1 + 0"
@@ -23,6 +31,7 @@
       3             " 1 +2 "
       1             "(2-1 ) "
       211           "100  + 111"
+      2111          "1,000  + 11,11"
       0             "1 + 2 + 3 + 4 + 5 -1-2-3-4-5"
       1             "1 * 1"
       2             "1*2"
@@ -89,6 +98,7 @@
                                (calc/eval env (calc/parse expr)))
                              (= final-env @env))
       {"a" 1 "b" 2}          ["a = 1" "b = a + 1"]
+      {"a" 1 "b" 3}          ["a = 1" "b=a*2+1"]
       {"a_a" 1 "b_b" 2}      ["a_a = 1" "b_b = a_a + 1"]
       {"variable" 1 "x" 0.0} ["variable = 1 + 0 * 2" "x = log(variable)"]
       {"x" 1 "u" 23 "v" 24}  ["x= 2 * 1 - 1 " "23 + 54" "u= 23" "v = x + u"]))
@@ -100,3 +110,16 @@
       {"a" 2}              ["a = 1" "a = 2"]
       {"a" 2 "b" 2}        ["a = 1" "b = a + 1" "a = b"]
       {"variable" 1 "x" 0} ["variable = 1 + 0 * 2" "x = log(variable)" "x = variable - 1"])))
+
+(deftest failure
+  (testing "expressions that don't match the spec fail"
+    (are [expr] (calc/failure? (calc/eval (calc/new-env) (calc/parse expr)))
+      "foo_ ="
+      "foo__ ="
+      "oo___ ="
+      "                        "
+      "bar_2  = 2 + 4"
+      "bar_2a = 3 + 4"
+      "foo_ = "
+      "foo__  ="
+      "foo_3  = a")))

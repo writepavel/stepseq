@@ -67,7 +67,7 @@
   (fn []
     (when-let [repo (state/get-current-repo)]
       (when-not (= config/local-repo repo)
-        (bean/->js {:url repo
+        (bean/->js {:url  repo
                     :name (util/node-path.basename repo)
                     :path (config/get-repo-dir repo)})))))
 
@@ -153,6 +153,12 @@
       (plugin-handler/register-plugin-simple-command
        pid cmd (assoc action 0 (keyword (first action)))))))
 
+(def ^:export register_plugin_ui_item
+  (fn [pid type ^js opts]
+    (when-let [opts (bean/->clj opts)]
+      (plugin-handler/register-plugin-ui-item
+       pid (assoc opts :type type)))))
+
 ;; app
 (def ^:export relaunch
   (fn []
@@ -161,6 +167,11 @@
 (def ^:export quit
   (fn []
     (ipc/ipc "quitApp")))
+
+(def ^:export open_external_link
+  (fn [url]
+    (when (re-find #"https?://" url)
+      (js/apis.openExternal url))))
 
 (def ^:export push_state
   (fn [^js k ^js params]
@@ -274,13 +285,19 @@
 
 (def ^:export move_block
   (fn [src-block-uuid target-block-uuid ^js opts]
-
     (let [{:keys [before children]} (bean/->clj opts)
-          top? (boolean before)
-          nested? (boolean children)
+          move-to (cond
+                    (boolean before)
+                    :top
+
+                    (boolean children)
+                    :nested
+
+                    :else
+                    nil)
           src-block-uuid (db-model/query-block-by-uuid (medley/uuid src-block-uuid))
           target-block-uuid (db-model/query-block-by-uuid (medley/uuid target-block-uuid))]
-      (editor-dnd-handler/move-block src-block-uuid target-block-uuid top? nested?))))
+      (editor-dnd-handler/move-block nil src-block-uuid target-block-uuid move-to))))
 
 (def ^:export get_block
   (fn [id-or-uuid ^js opts]

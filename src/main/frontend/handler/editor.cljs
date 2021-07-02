@@ -2089,7 +2089,7 @@ Returns [current-node sibling?]"
       (let [is-root-block? (= block root-block)
             is-question? (= (:db/id root-block)
                             (get-in block [:block/parent :db/id]))
-            is-place-for-answer? (let [parent-id (get-in block [:block/parent :db/id])
+            is-place-for-answer? (let [parent-id (get-in block [:data :block/parent :db/id])
                                        parent (db/pull parent-id)]
                                    (= (:db/id root-block)
                                       (get-in parent [:block/parent :db/id])))
@@ -2098,10 +2098,11 @@ Returns [current-node sibling?]"
                                   (replace-first-line #(str "[[" step-template-picture " " % "]] <% time %>. ") cleared-content)
                                   is-question?
                                   (let [content (replace-first-line #(str "((" (:block/uuid block) "))") cleared-content)]
-                                    (property/insert-property format content "step-question" "true"))
+                                    (property/insert-property format content :step-question true))
                                   is-place-for-answer?
-                                  (str "Answer. " cleared-content)
-                                  :else (str "Other. " cleared-content))]
+                                  (property/insert-property format cleared-content :step-answer true)
+                                  :else
+                                  cleared-content)]
         (-> updated-content
             template/resolve-dynamic-template!)))))
 

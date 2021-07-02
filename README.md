@@ -144,6 +144,18 @@ yarn watch
 yarn dev-electron-app
 ```
 
+If you met errors on windows try more verbose procedure
+
+- clean everything in `node_modules` and `static/node_modules`
+- clean npm cache `npm cache clear --force`
+- copy additional deps and dev_deps from `static/package.json` to `package.json`
+- run `yarn` from root and `static` directory
+- probably MS VS C++ SDK should be installed as mentioned here: https://github.com/nodejs/node-gyp#on-windows 
+
+If you have issues with better-sqlite3 package 
+- clean better-sqlite3 package in `node_modules` and `static/node_modules`
+- run `yarn` command from `static` dir
+
 ### 3. Build a release
 
 ```bash

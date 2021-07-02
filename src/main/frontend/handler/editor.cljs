@@ -1994,9 +1994,10 @@ Returns [current-node sibling?]"
                      :block/title new-title
                      :block/path-refs (->> (cons (:db/id page) (:block/path-refs block))
                                            (remove nil?))})]
-       (if file
-         (assoc m :block/file (select-keys file [:db/id]))
-         m)))))
+       (-> (if file
+             (assoc m :block/file (select-keys file [:db/id]))
+             m)
+           (wrap-parse-block))))))
 
 
 (comment

@@ -2189,6 +2189,27 @@ Returns [current-node sibling?]"
      #(get-block-tree-insert-pos-after-target target-block-id sibling?)
      page-block)))
 
+(defn put-template-content-at-point
+      ([template-content-data format]
+       (put-template-content-at-point template-content-data format nil nil nil))
+      ([[template-tree exclude-properties tree-update-fn content-update-fn]
+        format get-pos-fn on-block-inserted-fn page-block]
+       (let [edit-block (if get-pos-fn
+                          (first (get-pos-fn))
+                          (state/get-edit-block))
+             page (or page-block
+                      (:block/page edit-block))
+             file (:block/file (db/entity (:db/id page)))
+             new-block-uuids (atom #{})
+             updated-tree (tree-update-fn template-tree format exclude-properties page file new-block-uuids content-update-fn)
+             last-appended-tree-block (append-block-tree-at-target updated-tree new-block-uuids get-pos-fn)]
+            (when on-block-inserted-fn
+                  (on-block-inserted-fn (:data (first updated-tree)))
+                  ;; (js/setTimeout #(on-block-inserted-fn new-block) 5)
+                  )
+            last-appended-tree-block
+            )))
+
 (defn build-template-tree
   [template-db-id repo]
   (let [block (db/entity template-db-id)

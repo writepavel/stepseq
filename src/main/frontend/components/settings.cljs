@@ -358,7 +358,7 @@
         (state/close-settings!)
         (route-handler/redirect! {:to :shortcut})))]]])
 
-(defn auto-push-row [t current-repo enable-git-auto-push?]
+(defn auto-push-row [t current-repo enable-git-auto-push? enable-vault-auto-push?]
   (if (string/starts-with? current-repo "https://")
     (toggle "enable_git_auto_push"
             "Enable Git auto push"
@@ -462,7 +462,7 @@
         (journal-row t enable-journals?)
         (encryption-row t enable-encryption?)
         (keyboard-shortcuts-row t)
-        (auto-push-row t current-repo enable-git-auto-push?)]
+        (auto-push-row t current-repo enable-git-auto-push? enable-vault-auto-push?)]
 
        [:hr] ;; Outside of panel wrap so that it is wider
 

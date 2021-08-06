@@ -19,9 +19,11 @@
             [cljs.pprint :as pprint]
             [frontend.handler.notification :as notification]
             [frontend.components.editor :as editor]
+            [frontend.components.export :as export]
             [frontend.context.i18n :as i18n]
             [frontend.text :as text]
-            [frontend.handler.page :as page-handler]))
+            [frontend.handler.page :as page-handler]
+            [frontend.extensions.srs :as srs]))
 
 (defn- set-format-js-loading!
   [format value]
@@ -125,6 +127,7 @@
                     (reset! edit? true))}
        "Make template"))))
 
+
 (rum/defc block-context-menu-content
   [target block-id]
   (rum/with-context [[t] i18n/*tongue-context*]
@@ -172,23 +175,21 @@
 
           (block-template block-id)
 
-          ;; (ui/menu-link
-          ;;  {:key "Make template"
-          ;;   :on-click (fn [_e]
-          ;;               (editor-handler/copy-block-ref! block-id))}
-          ;;  "Make template")
-
           (ui/menu-link
-           {:key "Copy as text"
-            :on-click (fn [_e]
-                        (export-handler/copy-block! block-id))}
-           "Copy as TEXT")
+           {:key "Copy as"
+            :on-click (fn [_]
+                        (state/set-modal! #(export/export-blocks block-id)))}
+           "Copy as")
 
-          (ui/menu-link
-           {:key "Copy as JSON"
-            :on-click (fn [_e]
-                        (export-handler/copy-block-as-json! block-id))}
-           "Copy as JSON")
+          (if (srs/card-block? block)
+            (ui/menu-link
+             {:key "Preview Card"
+              :on-click #(srs/preview [(db/pull [:block/uuid block-id])])}
+             "Preview Card")
+            (ui/menu-link
+             {:key "Make a Card"
+              :on-click #(srs/make-block-a-card! block-id)}
+             "Make a Card"))
 
           (ui/menu-link
            {:key "Cut"
@@ -200,10 +201,10 @@
             (when-let [cmds (state/get-plugins-commands-with-type :block-context-menu-item)]
               (for [[_ {:keys [key label] :as cmd} action pid] cmds]
                 (ui/menu-link
-                  {:key      key
-                   :on-click #(commands/exec-plugin-simple-command!
-                                pid (assoc cmd :uuid block-id) action)}
-                  label))))
+                 {:key      key
+                  :on-click #(commands/exec-plugin-simple-command!
+                              pid (assoc cmd :uuid block-id) action)}
+                 label))))
 
           (when (state/sub [:ui/developer-mode?])
             (ui/menu-link
@@ -245,18 +246,6 @@
                       (let [target (gobj/get e "target")
                             block-id (d/attr target "blockid")]
                         (cond
-                          (and block-id (util/uuid-string? block-id))
-                          (do
-                            (util/stop e)
-                            (let [client-x (gobj/get e "clientX")
-                                  client-y (gobj/get e "clientY")
-                                  scroll-y (util/cur-doc-top)]
-                              (state/show-custom-context-menu! (block-context-menu-content target (cljs.core/uuid block-id)))
-                              (when-let [context-menu (d/by-id "custom-context-menu")]
-                                (d/set-style! context-menu
-                                              :left (str client-x "px")
-                                              :top (str (+ scroll-y client-y) "px")))))
-
                           (state/selection?)
                           (do
                             (util/stop e)
@@ -264,6 +253,18 @@
                                   client-y (gobj/get e "clientY")
                                   scroll-y (util/cur-doc-top)]
                               (state/show-custom-context-menu! (custom-context-menu-content))
+                              (when-let [context-menu (d/by-id "custom-context-menu")]
+                                (d/set-style! context-menu
+                                              :left (str client-x "px")
+                                              :top (str (+ scroll-y client-y) "px")))))
+
+                          (and block-id (util/uuid-string? block-id))
+                          (do
+                            (util/stop e)
+                            (let [client-x (gobj/get e "clientX")
+                                  client-y (gobj/get e "clientY")
+                                  scroll-y (util/cur-doc-top)]
+                              (state/show-custom-context-menu! (block-context-menu-content target (cljs.core/uuid block-id)))
                               (when-let [context-menu (d/by-id "custom-context-menu")]
                                 (d/set-style! context-menu
                                               :left (str client-x "px")

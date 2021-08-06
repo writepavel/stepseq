@@ -7,7 +7,8 @@
             [frontend.modules.shortcut.config :as config]
             [frontend.state :as state]
             [frontend.util :as util]
-            [lambdaisland.glogi :as log])
+            [lambdaisland.glogi :as log]
+            [frontend.handler.common :as common-handler])
   (:import [goog.ui KeyboardShortcutHandler]))
 (defonce default-binding
   (->> (vals config/default-config)
@@ -91,7 +92,18 @@
       (str/replace "mod" (if util/mac? "cmd" "ctrl"))
       (str/replace "alt" (if util/mac? "opt" "alt"))
       (str/replace "shift+/" "?")
+      (str/replace "open-square-bracket" "[")
+      (str/replace "close-square-bracket" "]")
       (str/lower-case)))
+
+;; if multiple bindings, gen seq for first binding only for now
+(defn gen-shortcut-seq [id]
+  (let [bindings (shortcut-binding id)]
+    (if (false? bindings)
+      []
+      (-> bindings
+          first
+          (str/split  #" |\+")))))
 
 (defn binding-for-display [k binding]
   (let [tmp (cond
@@ -130,8 +142,8 @@
                         result
                         :shortcuts
                         #(dissoc (rewrite/sexpr %) k))]
-        (state/set-config! repo new-result)
         (let [new-content (str new-result)]
+          (common-handler/reset-config! repo new-content)
           (file/set-file-content! repo path new-content))))))
 
 (defn get-group

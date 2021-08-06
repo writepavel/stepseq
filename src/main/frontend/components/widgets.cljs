@@ -10,7 +10,8 @@
             [clojure.string :as string]
             [frontend.ui :as ui]
             [frontend.context.i18n :as i18n]
-            [frontend.handler.web.nfs :as nfs]))
+            [frontend.handler.web.nfs :as nfs]
+            [frontend.modules.shortcut.core :as shortcut]))
 
 (rum/defc choose-preferred-format
   []
@@ -88,7 +89,7 @@
        [:div.cp__widgets-open-local-directory
         [:div.select-file-wrap.cursor
          (when nfs-supported?
-           {:on-click page-handler/ls-dir-files!})
+           {:on-click #(page-handler/ls-dir-files! shortcut/refresh!)})
          [:div
           [:h1.title "Open a local directory"]
           [:p "Logseq supports both Markdown and Org-mode. You can open an existing directory or create a new one on your device, a directory is also known simply as a folder. Your data will be stored only on this device."]
@@ -104,7 +105,7 @@
                             [:a {:href "https://web.dev/file-system-access/"
                                  :target "_blank"}
                              "new native filesystem API"]
-                            [:span ", please use any Chromium 86+ based browser like Chrome, Vivaldi, Edge, etc."]]))]]])]))
+                            [:span ", please use any Chromium 86+ based browser like Chrome, Vivaldi, Edge, etc. Notice that the API doesn't support mobile browsers at the moment."]]))]]])]))
 
 (rum/defcs add-graph <
   [state & {:keys [graph-types]

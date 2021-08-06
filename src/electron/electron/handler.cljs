@@ -2,6 +2,7 @@
   (:require ["electron" :refer [ipcMain dialog app]]
             [cljs-bean.core :as bean]
             ["fs" :as fs]
+            ["buffer" :as buffer]
             ["fs-extra" :as fs-extra]
             ["path" :as path]
             [electron.fs-watcher :as watcher]
@@ -17,6 +18,9 @@
 
 (defmethod handle :mkdir [_window [_ dir]]
   (fs/mkdirSync dir))
+
+(defmethod handle :mkdir-recur [_window [_ dir]]
+  (fs/mkdirSync dir #js {:recursive true}))
 
 ;; {encoding: 'utf8', withFileTypes: true}
 (defn- readdir
@@ -37,24 +41,33 @@
 (defmethod handle :readdir [_window [_ dir]]
   (readdir dir))
 
-(defmethod handle :unlink [_window [_ path]]
-  (fs/unlinkSync path))
+(defmethod handle :unlink [_window [_ repo path]]
+  (let [basename (path/basename path)
+        file-name (-> (string/replace path (str repo "/") "")
+                      (string/replace "/" "_")
+                      (string/replace "\\" "_"))
+        recycle-dir (str repo "/logseq/.recycle")
+        _ (fs-extra/ensureDirSync recycle-dir)
+        new-path (str recycle-dir "/" file-name)]
+    (fs/renameSync path new-path)))
 
 (defmethod handle :readFile [_window [_ path]]
   (utils/read-file path))
 
 (defmethod handle :writeFile [_window [_ path content]]
   ;; TODO: handle error
-  (fs/writeFileSync path content)
-  (fs/statSync path))
+  (let [^js Buf (.-Buffer buffer)
+        ^js content (if (instance? js/ArrayBuffer content)
+                  (.from Buf content) content)]
+
+    (fs/writeFileSync path content)
+    (fs/statSync path)))
 
 (defmethod handle :rename [_window [_ old-path new-path]]
   (fs/renameSync old-path new-path))
 
 (defmethod handle :stat [_window [_ path]]
   (fs/statSync path))
-
-
 
 (defonce allowed-formats
   #{:org :markdown :md :edn :json :css :excalidraw})
@@ -173,7 +186,6 @@
 
 (defmethod handle :quitApp []
   (.quit app))
-
 
 (defmethod handle :default [args]
   (println "Error: no ipc handler for: " (bean/->js args)))

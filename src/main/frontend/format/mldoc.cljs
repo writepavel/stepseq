@@ -9,7 +9,8 @@
             [goog.object :as gobj]
             [lambdaisland.glogi :as log]
             [medley.core :as medley]
-            ["mldoc" :as mldoc :refer [Mldoc]]))
+            ["mldoc" :as mldoc :refer [Mldoc]]
+            [linked.core :as linked]))
 
 (defonce parseJson (gobj/get Mldoc "parseJson"))
 (defonce parseInlineJson (gobj/get Mldoc "parseInlineJson"))
@@ -20,28 +21,35 @@
 (defonce parseAndExportOPML (gobj/get Mldoc "parseAndExportOPML"))
 (defonce astExportMarkdown (gobj/get Mldoc "astExportMarkdown"))
 
+(defn convert-export-md-remove-options [opts]
+  (->>
+   (mapv (fn [opt]
+             (case opt
+               :page-ref ["Page_ref"]
+               :emphasis ["Emphasis"]
+               []))
+         opts)
+   (remove empty?)))
+
+
 (defn default-config
   ([format]
-   (default-config format false))
-  ([format export-heading-to-list?]
+   (default-config format {:export-heading-to-list? false}))
+  ([format {:keys [export-heading-to-list? export-keep-properties? export-md-indent-style export-md-remove-options]}]
    (let [format (string/capitalize (name (or format :markdown)))]
-     (js/JSON.stringify
-      (bean/->js
-       {:toc false
-        :heading_number false
-        :keep_line_break true
-        :format format
-        :heading_to_list export-heading-to-list?}))))
-  ([format export-heading-to-list? exporting-keep-properties?]
-   (let [format (string/capitalize (name (or format :markdown)))]
-     (js/JSON.stringify
-      (bean/->js
-       {:toc false
-        :heading_number false
-        :keep_line_break true
-        :format format
-        :heading_to_list export-heading-to-list?
-        :exporting_keep_properties exporting-keep-properties?})))))
+     (->> {:toc false
+           :heading_number false
+           :keep_line_break true
+           :format format
+           :heading_to_list (or export-heading-to-list? false)
+           :exporting_keep_properties export-keep-properties?
+           :export_md_indent_style export-md-indent-style
+           :export_md_remove_options
+           (convert-export-md-remove-options export-md-remove-options)}
+          (filter #(not(nil? (second %))))
+          (into {})
+          (bean/->js)
+          (js/JSON.stringify)))))
 
 (def default-references
   (js/JSON.stringify
@@ -145,9 +153,8 @@
                                    v (if (contains? #{:title :description :filters :roam_tags} k)
                                        v
                                        (text/split-page-refs-without-brackets v))]
-                               [k v])))
-                          (reverse)
-                          (into {}))
+                               [k v]))))
+          properties (into (linked/map) properties)
           macro-properties (filter (fn [x] (= :macro (first x))) properties)
           macros (if (seq macro-properties)
                    (->>
@@ -161,7 +168,7 @@
                     (into {}))
                    {})
           properties (->> (remove (fn [x] (= :macro (first x))) properties)
-                          (into {}))
+                          (into (linked/map)))
           properties (if (seq properties)
                        (cond-> properties
                          (:roam_key properties)
@@ -190,7 +197,8 @@
                          (update :roam_alias ->vec)
                          (update :roam_tags (constantly roam-tags))
                          (update :filetags (constantly filetags)))
-          properties (medley/filter-kv (fn [k v] (not (empty? v))) properties)]
+          properties (medley/filter-kv (fn [k v] (not (empty? v))) properties)
+          properties (medley/map-vals util/unquote-string-if-wrapped properties)]
       (if (seq properties)
         (cons [["Properties" properties] nil] other-ast)
         original-ast))
@@ -258,8 +266,8 @@
   protocol/Format
   (toEdn [this content config]
     (->edn content config))
-  (toHtml [this content config]
-    (exportToHtml content config))
+  (toHtml [this content config references]
+    (exportToHtml content config references))
   (loaded? [this]
     true)
   (lazyLoad [this ok-handler]
@@ -272,3 +280,7 @@
 (defn plain->text
   [plains]
   (string/join (map last plains)))
+
+(defn properties?
+  [ast]
+  (contains? #{"Properties" "Property_Drawer"} (ffirst ast)))

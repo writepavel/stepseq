@@ -6,6 +6,7 @@
             [frontend.db :as db]
             [frontend.encrypt :as e]
             [frontend.handler.repo :as repo-handler]
+            [frontend.handler.page :as page-handler]
             [frontend.handler.common :as common-handler]
             [frontend.handler.route :as route-handler]
             [frontend.handler.export :as export-handler]
@@ -21,7 +22,8 @@
             [frontend.components.encryption :as encryption]
             [frontend.context.i18n :as i18n]
             [clojure.string :as string]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [frontend.modules.shortcut.core :as shortcut]))
 
 (rum/defc add-repo
   [args]
@@ -52,7 +54,7 @@
              [:div.mr-8
               (ui/button
                 (t :open-a-directory)
-                :on-click page-handler/ls-dir-files!)])
+                :on-click #(page-handler/ls-dir-files! shortcut/refresh!))])
            (when (and (state/logged?) (not (util/electron?)))
              (ui/button
                "Add another git repo"
@@ -77,7 +79,9 @@
                                            "Sync with the local directory"
                                            "Clone again and re-index the db")
                                   :on-click (fn []
-                                              (repo-handler/re-index! nfs-handler/rebuild-index!))}
+                                              (repo-handler/re-index!
+                                               nfs-handler/rebuild-index!
+                                               page-handler/create-today-journal!))}
                  "Re-index"]
                 [:a.text-gray-400.ml-4 {:title "No worries, unlink this graph will clear its cache only, it does not remove your files on the disk."
                                         :on-click (fn []
@@ -86,7 +90,7 @@
         (widgets/add-graph)))))
 
 (defn refresh-cb []
-  (repo-handler/create-today-journal!)
+  (page-handler/create-today-journal!)
   (shortcut/refresh!))
 
 (rum/defc sync-status < rum/reactive
@@ -99,12 +103,12 @@
       (when-not (= repo config/local-repo)
         (if (and nfs-repo? (nfs-handler/supported?))
           (let [syncing? (state/sub :graph/syncing?)]
-            [:div.ml-2.mr-1.mt-1.opacity-60.refresh.hover:opacity-100 {:class (if syncing? "loader" "initial")}
-             [:a
+            [:div.opacity-60.refresh.hover:opacity-100
+             [:a.button
               {:on-click #(nfs-handler/refresh! repo refresh-cb)
                :title (str "Import files from the local directory: " (config/get-local-dir repo) ".\nVersion: "
                            version/version)}
-              svg/refresh]])
+              [:div {:class (if syncing? "animate-spin-reverse" "initial")} svg/refresh]]])
           (let [changed-files (state/sub [:repo/changed-files repo])
                 should-push? (seq changed-files)
                 git-status (state/sub [:git/status repo])
@@ -202,15 +206,15 @@
         (when (seq repos)
           (ui/dropdown-with-links
            (fn [{:keys [toggle-fn]}]
-             [:a#repo-switch.fade-link {:on-click toggle-fn}
-
+             [:a#repo-switch.fade-link.block.pr-2.whitespace-nowrap {:on-click toggle-fn}
               [:span
                [:span.repo-plus svg/plus]
                (let [repo-name (get-repo-name current-repo)
                      repo-name (if (util/electron?)
-                                 (last (string/split repo-name #"/"))
+                                 (last
+                                  (string/split repo-name #"/"))
                                  repo-name)]
-                 [:span#repo-name repo-name])
+                 [:span#repo-name {:title repo-name} repo-name])
                [:span.dropdown-caret.ml-1 {:style {:border-top-color "#6b7280"}}]]])
            (mapv
             (fn [{:keys [id url]}]
@@ -240,7 +244,9 @@
                               (t :all-graphs)]
                              [:a {:class "block px-4 py-2 text-sm transition ease-in-out duration-150 cursor menu-link"
                                   :on-click (fn []
-                                              (repo-handler/re-index! nfs-handler/rebuild-index!))}
+                                              (repo-handler/re-index!
+                                               nfs-handler/rebuild-index!
+                                               page-handler/create-today-journal!))}
                               (t :re-index)]]}
              (seq switch-repos)
              (assoc :links-header [:div.font-medium.text-sm.opacity-70.px-4.py-2

@@ -6,6 +6,7 @@
             [frontend.components.datetime :as datetime-comp]
             [frontend.components.search :as search]
             [frontend.components.svg :as svg]
+            [frontend.components.block :as block]
             [frontend.config :as config]
             [frontend.db :as db]
             [frontend.handler.editor :as editor-handler :refer [get-state]]
@@ -13,6 +14,7 @@
             [frontend.handler.page :as page-handler]
             [frontend.mixins :as mixins]
             [frontend.modules.shortcut.core :as shortcut]
+            [frontend.extensions.zotero :as zotero]
             [frontend.state :as state]
             [frontend.ui :as ui]
             [frontend.util :as util]
@@ -30,6 +32,7 @@
                (not (state/sub :editor/show-block-search?))
                (not (state/sub :editor/show-template-search?))
                (not (state/sub :editor/show-input))
+               (not (state/sub :editor/show-zotero))
                (not (state/sub :editor/show-date-picker?)))
       (let [matched (util/react *matched-commands)]
         (ui/auto-complete
@@ -74,6 +77,9 @@
                                                      {:last-pattern commands/angle-bracket}))
         :class     "black"}))))
 
+(defn- in-sidebar? [el]
+  (not (.contains (.getElementById js/document "left-container") el)))
+
 (rum/defc page-search < rum/reactive
   {:will-unmount (fn [state] (reset! editor-handler/*selected-text nil) state)}
   [id format]
@@ -84,6 +90,7 @@
         (let [current-pos (cursor/pos input)
               edit-content (or (state/sub [:editor/content id]) "")
               edit-block (state/sub :editor/block)
+              sidebar? (in-sidebar? input)
               q (or
                  @editor-handler/*selected-text
                  (when (state/sub :editor/show-page-search-hashtag?)
@@ -94,11 +101,20 @@
                               (editor-handler/get-matched-pages q))]
           (ui/auto-complete
            matched-pages
-           {:on-chosen (page-handler/on-chosen-handler input id q pos format)
-            :on-enter #(page-handler/page-not-exists-handler input id q current-pos)
-            :item-render (fn [item] [:div.py-2 (search/highlight-exact-query item q)])
-            :empty-div [:div.text-gray-500.pl-4.pr-4 "Search for a page"]
-            :class     "black"}))))))
+           {:on-chosen   (page-handler/on-chosen-handler input id q pos format)
+            :on-enter    #(page-handler/page-not-exists-handler input id q current-pos)
+            :item-render (fn [page-name chosen?]
+                           [:div.py-2.preview-trigger-wrapper
+                            (block/page-preview-trigger
+                             {:children        [:div (search/highlight-exact-query page-name q)]
+                              :open?           chosen?
+                              :manual?         true
+                              :fixed-position? true
+                              :tippy-distance  24
+                              :tippy-position  (if sidebar? "left" "right")}
+                             page-name)])
+            :empty-div   [:div.text-gray-500.pl-4.pr-4 "Search for a page"]
+            :class       "black"}))))))
 
 (rum/defcs block-search-auto-complete < rum/reactive
   {:init (fn [state]
@@ -158,7 +174,6 @@
       (when input
         (let [current-pos (cursor/pos input)
               edit-content (state/sub [:editor/content id])
-              edit-block (state/sub :editor/block)
               q (or
                  (when (>= (count edit-content) current-pos)
                    (subs edit-content pos current-pos))
@@ -168,7 +183,7 @@
                                   (state/set-editor-show-template-search! false))]
           (ui/auto-complete
            matched-templates
-           {:on-chosen   (editor-handler/template-on-chosen-handler input id q format edit-block edit-content)
+           {:on-chosen   (editor-handler/template-on-chosen-handler id)
             :on-enter    non-exist-handler
             :empty-div   [:div.text-gray-500.pl-4.pr-4 "Search for a template"]
             :item-render (fn [[template _block-db-id]]
@@ -275,7 +290,7 @@
 
 (rum/defc absolute-modal < rum/static
   [cp set-default-width? {:keys [top left rect]}]
-  (let [max-height 300
+  (let [max-height 370
         max-width 300
         offset-top 24
         vw-height js/window.innerHeight
@@ -369,18 +384,30 @@
     (set-up-key-down! repo state format)
     (set-up-key-up! state input input-id search-timeout)))
 
-(defn- get-editor-heading-class
-  [content heading-level]
-  (if (string/includes? content "\n")
-    nil
-    (if heading-level (str "h" heading-level))))
+(def starts-with? clojure.string/starts-with?)
 
+(defn get-editor-heading-class [content]
+  (let [content (if content (str content) "")]
+    (cond
+      (string/includes? content "\n") "multiline-block"
+      (starts-with? content "# ") "h1"
+      (starts-with? content "## ") "h2"
+      (starts-with? content "### ") "h3"
+      (starts-with? content "#### ") "h4"
+      (starts-with? content "##### ") "h5"
+      (starts-with? content "###### ") "h6"
+      (starts-with? content "TODO ") "todo-block"
+      (starts-with? content "DOING ") "doing-block"
+      (starts-with? content "DONE ") "done-block"
+      :else "normal-block")))
 
 (rum/defc mock-textarea
   < rum/reactive
   {:did-update
    (fn [state]
-     (editor-handler/handle-last-input)
+     (try (editor-handler/handle-last-input)
+          (catch js/Error _e
+            nil))
      state)}
   []
   [:div#mock-text
@@ -418,7 +445,10 @@
           :as   option} id config]
   (let [content (state/get-edit-content)
         heading-level (get state ::heading-level)]
-    [:div.editor-inner {:class (if block "block-editor" "non-block-editor")}
+    [:div.editor-inner {:class (str
+                                (if block "block-editor" "non-block-editor")
+                                " "
+                                (get-editor-heading-class content))}
      (when config/mobile? (mobile-bar state id))
      (ui/ls-textarea
       {:id                id
@@ -429,7 +459,7 @@
        :on-change         (editor-handler/editor-on-change! block id search-timeout)
        :on-paste          (editor-handler/editor-on-paste! id)
        :auto-focus        false
-       :class             (get-editor-heading-class content heading-level)})
+       :class             (get-editor-heading-class content)})
 
      (mock-textarea)
 
@@ -470,6 +500,12 @@
                (editor-handler/handle-command-input command id format m pos)))
       true
       *slash-caret-pos)
+
+     (when (state/sub :editor/show-zotero)
+       (transition-cp
+        (zotero/zotero-search id)
+        false
+        *slash-caret-pos))
 
      (when format
        (image-uploader id format))]))

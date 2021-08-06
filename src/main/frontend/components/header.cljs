@@ -18,24 +18,27 @@
             [frontend.components.export :as export]
             [frontend.components.plugins :as plugins]
             [frontend.components.right-sidebar :as sidebar]
+            [frontend.modules.shortcut.core :as shortcut]
             [frontend.handler.page :as page-handler]
             [frontend.handler.web.nfs :as nfs]
             [frontend.mixins :as mixins]
             [goog.dom :as gdom]
-            [goog.object :as gobj]
-            [frontend.handler.migrate :as migrate]))
+            [goog.object :as gobj]))
 
 (rum/defc logo < rum/reactive
-  [{:keys [white?]}]
+  [{:keys [white? electron-mac?]}]
   [:a.cp__header-logo
-   {:href     (rfe/href :home)
+   {:class (when electron-mac? "button")
+    :href     (rfe/href :home)
     :on-click (fn []
                 (util/scroll-to-top)
                 (state/set-journals-length! 2))}
-   (if-let [logo (and config/publishing?
-                      (get-in (state/get-config) [:project :logo]))]
-     [:img.cp__header-logo-img {:src logo}]
-     (svg/logo (not white?)))])
+   (if electron-mac?
+     svg/home
+     (if-let [logo (and config/publishing?
+                       (get-in (state/get-config) [:project :logo]))]
+      [:img.cp__header-logo-img {:src logo}]
+      (svg/logo (not white?))))])
 
 (rum/defc login
   [logged?]
@@ -45,10 +48,11 @@
 
       (ui/dropdown-with-links
        (fn [{:keys [toggle-fn]}]
-         [:a.fade-link {:on-click toggle-fn}
-          [:span.ml-1 (t :login)]])
-       (let [list [{:title (t :login-google)
-                    :url (str config/website "/login/google")}
+         [:a.fade-link.block.p-2 {:on-click toggle-fn}
+          [:span (t :login)]])
+       (let [list [
+                   ;; {:title (t :login-google)
+                   ;;  :url (str config/website "/login/google")}
                    {:title (t :login-github)
                     :url (str config/website "/login/github")}]]
          (mapv
@@ -79,13 +83,17 @@
         logged? (state/logged?)]
     (ui/dropdown-with-links
      (fn [{:keys [toggle-fn]}]
-       [:a.cp__right-menu-button
+       [:a.cp__right-menu-button.button
         {:on-click toggle-fn}
         (svg/horizontal-dots nil)])
      (->>
       [(when-not (util/mobile?)
          {:title (t :shortcut.ui/toggle-right-sidebar)
           :options {:on-click state/toggle-sidebar-open?!}})
+
+       (when current-repo
+         {:title (t :cards-view)
+          :options {:on-click #(state/pub-event! [:modal/show-cards])}})
 
        (when current-repo
          {:title (t :graph-view)
@@ -107,9 +115,10 @@
           :options {:href (rfe/href :all-journals)}
           :icon svg/calendar-sm})
 
-       {:title (t :settings)
-        :options {:on-click state/open-settings!}
-        :icon svg/settings-sm}
+       (when-not (state/publishing-enable-editing?)
+         {:title (t :settings)
+          :options {:on-click state/open-settings!}
+          :icon svg/settings-sm})
 
        (when developer-mode?
          {:title (t :plugins)
@@ -129,12 +138,6 @@
           :options {:href (rfe/href :import)}
           :icon svg/import-sm})
 
-       (when (and current-repo
-                  (not (:markdown/version (state/get-config))))
-         {:title "Convert to more standard Markdown"
-          :options {:on-click (fn [] (migrate/show-convert-notification! current-repo))}
-          :icon svg/import-sm})
-
        {:title [:div.flex-row.flex.justify-between.items-center
                 [:span (t :join-community)]]
         :options {:href "https://discord.gg/KpN4eHY"
@@ -150,12 +153,23 @@
      ;;                  [:div.px-2.py-2 (login logged?)])}
      )))
 
+(rum/defc back-and-forward
+  [electron-mac?]
+  [:div.flex.flex-row
+   [:a.it.navigation.nav-left.button
+    {:title "Go Back" :on-click #(js/window.history.back)}
+    svg/arrow-narrow-left]
+   [:a.it.navigation.nav-right.button
+    {:title "Go Forward" :on-click #(js/window.history.forward)}
+    svg/arrow-narrow-right]])
+
 (rum/defc header < rum/reactive
   [{:keys [open-fn current-repo white? logged? page? route-match me default-home new-block-mode]}]
   (let [local-repo? (= current-repo config/local-repo)
         repos (->> (state/sub [:me :repos])
                    (remove #(= (:url %) config/local-repo)))
-        electron-mac? (and util/mac? (util/electron?))]
+        electron-mac? (and util/mac? (util/electron?))
+        electron-not-mac? (and (util/electron?) (not electron-mac?))]
     (rum/with-context [[t] i18n/*tongue-context*]
       [:div.cp__header#head
        {:class (when electron-mac? "electron-mac")
@@ -168,20 +182,20 @@
                                       (open-fn)
                                       (state/set-left-sidebar-open! true))})
 
-       (logo {:white? white?})
+       (when-not electron-mac?
+         (logo {:white? white?}))
 
-       (when (util/electron?)
-         [:a.opacity-60.hover:opacity-100.mr-1.it.navigation.nav-left
-          {:title "Go Back" :on-click #(js/window.history.back)} svg/arrow-narrow-left])
-
-       (when (util/electron?)
-         [:a.opacity-60.hover:opacity-100.it.navigation.nav-right
-          {:style {:margin-right 5}
-           :title "Go Forward" :on-click #(js/window.history.forward)} svg/arrow-narrow-right])
+       (when electron-not-mac? (back-and-forward))
 
        (if current-repo
          (search/search)
          [:div.flex-1])
+
+       (when electron-mac?
+         (logo {:white? white?
+                :electron-mac? true}))
+
+       (when electron-mac? (back-and-forward true))
 
        (new-block-mode)
 
@@ -198,21 +212,21 @@
 
        (when (and (nfs/supported?) (empty? repos)
                   (not config/publishing?))
-         [:a.text-sm.font-medium.opacity-70.hover:opacity-100.ml-3.block.open-button
-          {:on-click (fn []
-                       (page-handler/ls-dir-files!))}
-          [:div.flex.flex-row.text-center.open-button__inner
+         [:a.text-sm.font-medium.button
+          {:on-click #(page-handler/ls-dir-files! shortcut/refresh!)}
+          [:div.flex.flex-row.text-center.open-button__inner.items-center
            [:span.inline-block.open-button__icon-wrapper svg/folder-add]
            (when-not config/mobile?
              [:span.ml-1 {:style {:margin-top (if electron-mac? 0 2)}}
               (t :open)])]])
 
        (if config/publishing?
-         [:a.text-sm.font-medium.ml-3 {:href (rfe/href :graph)}
+         [:a.text-sm.font-medium.button {:href (rfe/href :graph)}
           (t :graph)])
 
        (dropdown-menu {:me me
                        :t t
                        :current-repo current-repo
                        :default-home default-home})
+
        (when (not (state/sub :ui/sidebar-open?)) (sidebar/toggle))])))

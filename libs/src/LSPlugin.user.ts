@@ -10,12 +10,13 @@ import {
   BlockCommandCallback,
   StyleString,
   ThemeOptions,
-  UIOptions, IHookEvent
+  UIOptions, IHookEvent, BlockIdentity, BlockPageName
 } from './LSPlugin'
 import Debug from 'debug'
 import * as CSS from 'csstype'
 import { snakeCase } from 'snake-case'
 import EventEmitter from 'eventemitter3'
+import { LSPluginFileStorage } from './modules/LSPlugin.Storage'
 
 declare global {
   interface Window {
@@ -23,6 +24,7 @@ declare global {
   }
 }
 
+const PROXY_CONTINUE = Symbol.for('proxy-continue')
 const debug = Debug('LSPlugin:user')
 
 /**
@@ -66,15 +68,13 @@ const app: Partial<IAppProxy> = {
       method: 'register-plugin-ui-item',
       args: [pid, type, opts]
     })
-
-    return false
   },
 
   registerPageMenuItem (
     this: LSPluginUser,
     tag: string,
     action: (e: IHookEvent & { page: string }) => void
-  ): unknown {
+  ) {
     if (typeof action !== 'function') {
       return false
     }
@@ -87,8 +87,6 @@ const app: Partial<IAppProxy> = {
       type, {
         key, label
       }, action)
-
-    return false
   }
 }
 
@@ -141,20 +139,18 @@ const editor: Partial<IEditorProxy> = {
       method: 'register-plugin-slash-command',
       args: [this.baseInfo.id, [tag, actions]]
     })
-
-    return false
   },
 
   registerBlockContextMenuItem (
     this: LSPluginUser,
     tag: string,
     action: BlockCommandCallback
-  ): unknown {
+  ) {
     if (typeof action !== 'function') {
       return false
     }
 
-    const key = + '_' + this.baseInfo.id
+    const key = tag + '_' + this.baseInfo.id
     const label = tag
     const type = 'block-context-menu-item'
 
@@ -162,8 +158,19 @@ const editor: Partial<IEditorProxy> = {
       type, {
         key, label
       }, action)
+  },
 
-    return false
+  scrollToBlockInPage (
+    this: LSPluginUser,
+    pageName: BlockPageName,
+    blockId: BlockIdentity
+  ) {
+    const anchor = `block-content-` + blockId
+    this.App.pushState(
+      'page',
+      { name: pageName },
+      { anchor }
+    )
   }
 }
 
@@ -191,6 +198,8 @@ export class LSPluginUser extends EventEmitter<LSPluginUserEvents> implements IL
    * @private
    */
   private _ui = new Map<number, uiState>()
+
+  private _fileStorage: LSPluginFileStorage
 
   /**
    * handler of before unload plugin
@@ -226,6 +235,9 @@ export class LSPluginUser extends EventEmitter<LSPluginUserEvents> implements IL
         actor?.reject(e)
       }
     })
+
+    // modules
+    this._fileStorage = new LSPluginFileStorage(this)
   }
 
   async ready (
@@ -357,7 +369,7 @@ export class LSPluginUser extends EventEmitter<LSPluginUserEvents> implements IL
         return function (this: any, ...args: any) {
           if (origMethod) {
             const ret = origMethod.apply(that, args)
-            if (ret === false) return
+            if (ret !== PROXY_CONTINUE) return
           }
 
           // Handle hook
@@ -399,6 +411,10 @@ export class LSPluginUser extends EventEmitter<LSPluginUserEvents> implements IL
 
   get DB (): IDBProxy {
     return this._makeUserProxy(db)
+  }
+
+  get FileStorage (): LSPluginFileStorage {
+    return this._fileStorage
   }
 }
 

@@ -1,7 +1,7 @@
 ## Hi, welcome to Logseq!
 - Logseq is a _privacy-first_, _open-source_ platform for _knowledge_ management and collaboration.
 - This is a 3 minute tutorial on how to use Logseq. Let's get started!
-- (Feel free to edit anything, no change will be saved at this moment. If you do want to persist your work, click the **top-right** corner of the screen to connect Logseq to either Github or local directory.)
+- [:div.warning "(Feel free to edit anything, no change will be saved at this moment. If you do want to persist your work, click the **top-right** corner of the screen to either open a local directory or connect Logseq to Github.)"]
 - Here are some tips might be useful.
 #+BEGIN_TIP
 Click to edit any block.
@@ -19,17 +19,10 @@ some changes on the right sidebar, those referenced blocks will be changed too!
 - 4. Do you support tasks like todo/doing/done and priorities?
     - Yes, type `/` and pick your favorite todo keyword or priority (A/B/C).
     - NOW [#A] A dummy tutorial on "How to take dummy notes?"
-    - LATER [#A] Check out this awesome video by [:a {:href "https://twitter.com/EdTravelling" :target "_blank"} "@EdTravelling"], which shows how to use logseq to open your local directory.
+    - LATER [#A] Check out this awesome video by [:a {:href "https://twitter.com/TechWithEd" :target "_blank"} "@TechWithEd"], which shows how to use logseq to open your local directory.
 
-[:div.video-wrapper.mb-4
-        [:iframe
-         {:allowFullScreen "allowfullscreen"
-          :allow
-          "accelerometer; autoplay; encrypted-media; gyroscope"
-        :frameBorder "0"
-        :src "https://www.youtube.com/embed/Afmqowr0qEQ"
-        :height "367"
-        :width "653"}]]
+    {{tutorial-video}}
+
     - DONE Create a page
     - CANCELED [#C] Write a page with more than 1000 blocks
 - That's it! You can create more bullets or open a local directory to import some notes now!

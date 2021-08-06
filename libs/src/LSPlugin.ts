@@ -1,6 +1,7 @@
 import EventEmitter from 'eventemitter3'
 import * as CSS from 'csstype'
 import { LSPluginCaller } from './LSPlugin.caller'
+import { LSPluginFileStorage } from './modules/LSPlugin.Storage'
 
 export type PluginLocalIdentity = string
 
@@ -176,8 +177,8 @@ export interface IAppProxy {
   getCurrentGraph: () => Promise<AppGraphInfo | null>
 
   // router
-  pushState: (k: string, params?: {}) => void
-  replaceState: (k: string, params?: {}) => void
+  pushState: (k: string, params?: Record<string, any>, query?: Record<string, any>) => void
+  replaceState: (k: string, params?: Record<string, any>, query?: Record<string, any>) => void
 
   // ui
   showMsg: (content: string, status?: 'success' | 'warning' | string) => void
@@ -186,12 +187,12 @@ export interface IAppProxy {
   registerUIItem: (
     type: 'toolbar' | 'pagebar',
     opts: { key: string, template: string }
-  ) => boolean
+  ) => void
 
   registerPageMenuItem: (
     tag: string,
     action: (e: IHookEvent & { page: string }) => void
-  ) => unknown
+  ) => void
 
   // events
   onCurrentGraphChanged: IUserHook
@@ -230,7 +231,7 @@ export interface IEditorProxy extends Record<string, any> {
   registerSlashCommand: (
     tag: string,
     action: BlockCommandCallback | Array<SlashCommandAction>
-  ) => boolean
+  ) => unknown
 
   /**
    * register a custom command in the block context menu (triggered by right clicking the block dot)
@@ -338,6 +339,11 @@ export interface IEditorProxy extends Record<string, any> {
   getBlockProperty: (block: BlockIdentity, key: string) => Promise<any>
 
   getBlockProperties: (block: BlockIdentity) => Promise<any>
+
+  scrollToBlockInPage: (
+    pageName: BlockPageName,
+    blockId: BlockIdentity
+  ) => void
 }
 
 /**
@@ -494,4 +500,6 @@ export interface ILSPluginUser extends EventEmitter<LSPluginUserEvents> {
   App: IAppProxy & Record<string, any>
   Editor: IEditorProxy & Record<string, any>
   DB: IDBProxy
+
+  FileStorage: LSPluginFileStorage
 }

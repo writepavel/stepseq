@@ -5,6 +5,7 @@
             ["react-textarea-autosize" :as TextareaAutosize]
             ["react-resize-context" :as Resize]
             ["react-tippy" :as react-tippy]
+            ["react-tweet-embed" :as react-tweet-embed]
             [frontend.util :as util]
             [frontend.mixins :as mixins]
             [frontend.handler.notification :as notification-handler]
@@ -18,7 +19,8 @@
             [frontend.ui.date-picker]
             [frontend.context.i18n :as i18n]
             [frontend.modules.shortcut.core :as shortcut]
-            [lambdaisland.glogi :as log]))
+            [lambdaisland.glogi :as log]
+            [frontend.config :as config]))
 
 (defonce transition-group (r/adapt-class TransitionGroup))
 (defonce css-transition (r/adapt-class CSSTransition))
@@ -26,6 +28,7 @@
 (def resize-provider (r/adapt-class (gobj/get Resize "ResizeProvider")))
 (def resize-consumer (r/adapt-class (gobj/get Resize "ResizeConsumer")))
 (def Tippy (r/adapt-class (gobj/get react-tippy "Tooltip")))
+(def ReactTweetEmbed (r/adapt-class react-tweet-embed))
 
 (rum/defc ls-textarea < rum/reactive
   [{:keys [on-change] :as props}]
@@ -110,10 +113,12 @@
    opts))
 
 (defn button
-  [text & {:keys [background href class intent on-click]
+  [text & {:keys [background href class intent on-click small?]
+           :or {small? false}
            :as   option}]
   (let [klass (if-not intent ".bg-indigo-600.hover:bg-indigo-700.focus:border-indigo-700.active:bg-indigo-700")
-        klass (if background (string/replace klass "indigo" background) klass)]
+        klass (if background (string/replace klass "indigo" background) klass)
+        klass (if small? (str klass ".px-2.py-1") klass)]
     (if href
       [:a.ui__button.is-link
        (merge
@@ -292,6 +297,30 @@
     (state/sync-system-theme!)
     #(.removeEventListener schemaMedia "change" state/sync-system-theme!)))
 
+(defn set-global-active-keystroke [val]
+  (.setAttribute js/document.body "data-active-keystroke" val))
+
+(defn setup-active-keystroke! []
+  (let [active-keystroke (atom #{})
+        handle-global-keystroke (fn [down? e]
+                                  (let [handler (if down? conj disj)
+                                        keystroke e.key]
+                                    (swap! active-keystroke handler keystroke))
+                                  (set-global-active-keystroke (apply str (interpose "+" (vec @active-keystroke)))))
+        keydown-handler (partial handle-global-keystroke true)
+        keyup-handler (partial handle-global-keystroke false)
+        clear-all #(do (set-global-active-keystroke "")
+                        (reset! active-keystroke #{}))]
+    (.addEventListener js/window "keydown" keydown-handler)
+    (.addEventListener js/window "keyup" keyup-handler)
+    (.addEventListener js/window "blur" clear-all)
+    (.addEventListener js/window "visibilitychange" clear-all)
+    (fn []
+      (.removeEventListener js/window "keydown" keydown-handler)
+      (.removeEventListener js/window "keyup" keyup-handler)
+      (.removeEventListener js/window "blur" clear-all)
+      (.removeEventListener js/window "visibilitychange" clear-all))))
+
 (defn on-scroll
   [node on-load on-top-reached]
   (let [full-height (gobj/get node "scrollHeight")
@@ -320,7 +349,7 @@
 (rum/defcs infinite-list <
   (mixins/event-mixin attach-listeners)
   "Render an infinite list."
-  [state list-element-id body {:keys [on-load has-more]}]
+  [state list-element-id body {:keys [on-load has-more on-top-reached]}]
   (rum/with-context [[t] i18n/*tongue-context*]
     (rum/fragment
      body
@@ -349,16 +378,17 @@
            {:key idx}
            (let [item-cp
                  [:div {:key idx}
-                  (menu-link
-                   {:id       (str "ac-" idx)
-                    :class    (when (= @current-idx idx)
-                                "chosen")
-                    :on-mouse-down (fn [e]
-                                     (util/stop e)
-                                     (if (and (gobj/get e "shiftKey") on-shift-chosen)
-                                       (on-shift-chosen item)
-                                       (on-chosen item)))}
-                   (if item-render (item-render item) item))]]
+                  (let [chosen? (= @current-idx idx)]
+                    (menu-link
+                      {:id            (str "ac-" idx)
+                       :class         (when chosen? "chosen")
+                       :on-mouse-enter #(reset! current-idx idx)
+                       :on-mouse-down (fn [e]
+                                        (util/stop e)
+                                        (if (and (gobj/get e "shiftKey") on-shift-chosen)
+                                          (on-shift-chosen item)
+                                          (on-chosen item)))}
+                      (if item-render (item-render item chosen?) item)))]]
 
              (if get-group-name
                (if-let [group-name (get-group-name item)]
@@ -395,8 +425,7 @@
            (if (or (= :meta key) (= "meta" key))
              (util/meta-key-name)
              (name key))])
-        sequence)]
-  )
+        sequence)])
 
 (defonce modal-show? (atom false))
 (rum/defc modal-overlay
@@ -419,7 +448,7 @@
              "exiting" "ease-in duration-200 opacity-100 translate-y-0 sm:scale-100"
              "exited" "ease-in duration-200 opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95")}
    [:div.absolute.top-0.right-0.pt-2.pr-2
-    [:button.ui__modal-close
+    [:a.ui__modal-close.opacity-60.hover:opacity-100
      {:aria-label "Close"
       :type       "button"
       :on-click   close-fn}
@@ -550,14 +579,16 @@
          {:style    {:width       14
                      :height      16
                      :margin-left -24}
-          :on-click (fn [e]
-                      (util/stop e)
-                      (swap! collapsed? not))}
-         [:span {:class (if @control? "control-show" "control-hide")} (rotating-arrow @collapsed?)]]
+          :on-mouse-down (fn [e]
+                           (util/stop e)
+                           (swap! collapsed? not))}
+         [:span {:class (if @control? "control-show" "control-hide")}
+          (rotating-arrow @collapsed?)]]
         (if (fn? header)
           (header @collapsed?)
           header)]]]
-     [:div {:class (if @collapsed? "hidden" "initial")}
+     [:div {:class (if @collapsed? "hidden" "initial")
+            :on-mouse-down (fn [e] (.stopPropagation e))}
       (if (fn? content)
         (if (not @collapsed?) (content) nil)
         content)]]))
@@ -585,17 +616,17 @@
        (js/console.dir error)
        (assoc state ::error error))}
   [{error ::error, c :rum/react-component} error-view view]
-  (when error
-    (js/console.error error)
-    (log/error :ui/catch-error error))
   (if (some? error)
-    error-view
+    (do
+      (log/error :exception error)
+      error-view)
     view))
 
 (rum/defc select
-  [options on-change]
-  [:select.mt-1.form-select.block.w-full.px-3.text-base.leading-6.border-gray-300.focus:outline-none.focus:shadow-outline-blue.focus:border-blue-300.sm:text-sm.sm:leading-5.ml-4
-   {:style     {:padding "0 0 0 12px"}
+  [options on-change class]
+  [:select.mt-1.block.px-3.text-base.leading-6.border-gray-300.focus:outline-none.focus:shadow-outline-blue.focus:border-blue-300.sm:text-sm.sm:leading-5.ml-4
+   {:class     (or class "form-select")
+    :style     {:padding "0 0 0 12px"}
     :on-change (fn [e]
                  (let [value (util/evalue e)]
                    (on-change value)))}
@@ -609,23 +640,57 @@
 
 (rum/defcs tippy < rum/static
   (rum/local false ::mounted?)
-  [state opts child]
+  [state {:keys [fixed-position? open?] :as opts} child]
   (let [*mounted? (::mounted? state)
-        mounted? @*mounted?]
+        mounted? @*mounted?
+        manual (not= open? nil)]
     (Tippy (->
             (merge {:arrow true
                     :sticky true
                     :theme "customized"
                     :disabled (not (state/enable-tooltip?))
                     :unmountHTMLWhenHide true
-                    :open @*mounted?
+                    :open (if manual open? @*mounted?)
+                    :trigger (if manual "manual" "mouseenter focus")
+                    ;; See https://github.com/tvkhoa/react-tippy/issues/13
+                    :popperOptions (if fixed-position?
+                                     {:modifiers {:flip {:enabled false}
+                                                  :hide {:enabled false}
+                                                  :preventOverflow {:enabled false}}}
+                                     {})
                     :onShow #(reset! *mounted? true)
                     :onHide #(reset! *mounted? false)}
                    opts)
-            (assoc :html (if mounted?
-                           (when-let [html (:html opts)]
-                             (if (fn? html)
-                               (html)
-                               html))
+            (assoc :html (if (or open? mounted?)
+                           (try
+                             (when-let [html (:html opts)]
+                              (if (fn? html)
+                                (html)
+                                [:div.pr-3.py-1
+                                 html]))
+                             (catch js/Error e
+                               (log/error :exception e)
+                               [:div]))
                            [:div {:key "tippy"} ""])))
            child)))
+
+(defn slider
+  [default-value {:keys [min max on-change]}]
+  [:input.cursor-pointer
+   {:type  "range"
+    :value (int default-value)
+    :min   min
+    :max   max
+    :style {:width "100%"}
+    :on-change #(let [value (util/evalue %)]
+                  (on-change value))}])
+
+(rum/defcs tweet-embed < (rum/local true :loading?)
+  [state id]
+  (let [*loading? (:loading? state)]
+    [:div [(when @*loading? [:span.flex.items-center [svg/loading " ... loading"]])
+           (ReactTweetEmbed
+             {:id                    id
+              :class                 "contents"
+              :options               {:theme (when (= (state/sub :ui/theme) "dark") "dark")}
+              :on-tweet-load-success #(reset! *loading? false)})]]))

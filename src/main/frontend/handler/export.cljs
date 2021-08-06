@@ -34,7 +34,6 @@
    (outliner-tree/blocks->vec-tree
     (db/get-page-blocks-no-cache page) page) {:init-level 1
                                               :heading-to-list? true}))
-
 (defn- get-file-content
   [file-path]
   (if-let [page-name
@@ -67,29 +66,6 @@
    [block]
    (outliner-tree/blocks->vec-tree (str (:block/uuid block)))
    (outliner-file/tree->file-content {:init-level 1})))
-
-(defn copy-block!
-  [block-id]
-  (when-let [block (db/pull [:block/uuid block-id])]
-    (let [content (:block/content block)]
-      (common-handler/copy-to-clipboard-without-id-property! (:block/format block) content))))
-
-(defn copy-block-as-json!
-  [block-id]
-  (when-let [repo (state/get-current-repo)]
-    (let [block-children (db/get-block-and-children repo block-id)]
-      (util/copy-to-clipboard! (js/JSON.stringify (bean/->js block-children))))))
-
-(defn copy-page-as-json!
-  [page-name]
-  (when-let [repo (state/get-current-repo)]
-    (let [properties (db/get-page-properties page-name)
-          blocks (db/get-page-blocks repo page-name)]
-      (util/copy-to-clipboard!
-       (js/JSON.stringify
-        (bean/->js
-         {:properties properties
-          :blocks blocks}))))))
 
 (defn export-repo-as-json!
   [repo]
@@ -191,12 +167,15 @@
 
 (defn- get-embed-and-refs-blocks-pages-aux []
   (let [mem (atom {})]
-    (letfn [(f [repo page-or-block is-block? exclude-blocks exclude-pages]
+    (letfn [(f [repo page-or-block is-block? exclude-blocks exclude-pages ttl]
               (let [v (get @mem [repo page-or-block])]
                 (if v v
                     (let [[ref-blocks ref-pages]
                           (->> (if is-block?
-                                 [page-or-block]
+                                 (if (or (seq? page-or-block)
+                                         (vector? page-or-block))
+                                   (vec page-or-block)
+                                   [page-or-block])
                                  (db/get-page-blocks-no-cache
                                   repo page-or-block {:pull-keys '[:block/refs]}))
                                (filterv :block/refs)
@@ -222,13 +201,15 @@
                                (filterv :block/name)
                                (flatten))
                           [next-ref-blocks1 next-ref-pages1]
-                          (->> ref-blocks
-                               (mapv #(f repo % true (set (concat ref-block-ids exclude-blocks)) exclude-pages))
-                               (apply mapv vector))
+                          (if (<= ttl 0) [[] []]
+                              (->> ref-blocks
+                                   (mapv #(f repo % true (set (concat ref-block-ids exclude-blocks)) exclude-pages (- ttl 1)))
+                                   (apply mapv vector)))
                           [next-ref-blocks2 next-ref-pages2]
-                          (->> ref-pages
-                               (mapv #(f repo (:block/name %) false exclude-blocks (set (concat ref-page-ids exclude-pages))))
-                               (apply mapv vector))
+                          (if (<= ttl 0) [[] []]
+                              (->> ref-pages
+                                   (mapv #(f repo (:block/name %) false exclude-blocks (set (concat ref-page-ids exclude-pages)) (- ttl 1)))
+                                   (apply mapv vector)))
                           result
                           [(->> (concat ref-block-ids next-ref-blocks1 next-ref-blocks2)
                                 (flatten)
@@ -242,9 +223,9 @@
       f)))
 
 (defn- get-page&block-refs-by-query
-  [repo page get-page&block-refs-by-query-aux]
+  [repo page-or-block get-page&block-refs-by-query-aux {:keys [is-block?] :or {is-block? false}}]
   (let [[block-ids page-ids]
-        (get-page&block-refs-by-query-aux repo page false #{} #{})
+        (get-page&block-refs-by-query-aux repo page-or-block is-block? #{} #{} 3)
         blocks
         (db/pull-many repo '[*] block-ids)
         pages-name-and-content
@@ -420,14 +401,14 @@
   [repo files heading-to-list?]
   (let [get-page&block-refs-by-query-aux (get-embed-and-refs-blocks-pages-aux)
         f (if (< (count files) 30)      ;query db for per page if (< (count files) 30), or pre-compute whole graph's page&block-refs
-            #(get-page&block-refs-by-query repo % get-page&block-refs-by-query-aux)
+            #(get-page&block-refs-by-query repo % get-page&block-refs-by-query-aux {})
             (let [page&block-refs (page&block-refs repo)]
               #(get-page&block-refs repo % page&block-refs)))]
     (->> files
          (mapv (fn [{:keys [path content names format]}]
                  (when (first names)
                    [path (fp/exportMarkdown f/mldoc-record content
-                                            (f/get-default-config format heading-to-list?)
+                                            (f/get-default-config format {:export-heading-to-list? heading-to-list?})
                                             (js/JSON.stringify
                                              (clj->js (f (first names)))))])))
          (remove nil?))))
@@ -436,7 +417,7 @@
   [repo files]
   (let [get-page&block-refs-by-query-aux (get-embed-and-refs-blocks-pages-aux)
         f (if (< (count files) 30)      ;query db for per page if (< (count files) 30), or pre-compute whole graph's page&block-refs
-            #(get-page&block-refs-by-query repo % get-page&block-refs-by-query-aux)
+            #(get-page&block-refs-by-query repo % get-page&block-refs-by-query-aux {})
             (let [page&block-refs (page&block-refs repo)]
               #(get-page&block-refs repo % page&block-refs)))]
     (->> files
@@ -452,13 +433,53 @@
                                            (clj->js (f (first names)))))]))))
          (remove nil?))))
 
+(defn export-blocks-as-opml
+  [repo root-block-uuid]
+  (let [get-page&block-refs-by-query-aux (get-embed-and-refs-blocks-pages-aux)
+        f #(get-page&block-refs-by-query repo % get-page&block-refs-by-query-aux {:is-block? true})
+        root-block (db/entity [:block/uuid root-block-uuid])
+        blocks (db/get-block-and-children repo root-block-uuid)
+        refs (f blocks)
+        content (get-blocks-contents repo root-block-uuid)
+        format (or (:block/format root-block) (state/get-preferred-format))]
+    (fp/exportOPML f/mldoc-record content
+                   (f/get-default-config format)
+                   "untitled"
+                   (js/JSON.stringify (clj->js refs)))))
+
+(defn export-blocks-as-markdown
+  [repo root-block-uuid indent-style remove-options]
+  (let [get-page&block-refs-by-query-aux (get-embed-and-refs-blocks-pages-aux)
+        f #(get-page&block-refs-by-query repo % get-page&block-refs-by-query-aux {:is-block? true})
+        root-block (db/entity [:block/uuid root-block-uuid])
+        blocks (db/get-block-and-children repo root-block-uuid)
+        refs (f blocks)
+        content (get-blocks-contents repo root-block-uuid)
+        format (or (:block/format root-block) (state/get-preferred-format))]
+    (fp/exportMarkdown f/mldoc-record content
+                       (f/get-default-config format {:export-md-indent-style indent-style :export-md-remove-options remove-options})
+                       (js/JSON.stringify (clj->js refs)))))
+
+(defn export-blocks-as-html
+  [repo root-block-uuid]
+  (let [get-page&block-refs-by-query-aux (get-embed-and-refs-blocks-pages-aux)
+        f #(get-page&block-refs-by-query repo % get-page&block-refs-by-query-aux {:is-block? true})
+        root-block (db/entity [:block/uuid root-block-uuid])
+        blocks (db/get-block-and-children repo root-block-uuid)
+        refs (f blocks)
+        content (get-blocks-contents repo root-block-uuid)
+        format (or (:block/format root-block) (state/get-preferred-format))]
+    (fp/toHtml f/mldoc-record content
+                       (f/get-default-config format)
+                       (js/JSON.stringify (clj->js refs)))))
+
 (defn- convert-md-files-unordered-list-or-heading
   [repo files heading-to-list?]
   (->> files
        (mapv (fn [{:keys [path content names format]}]
                (when (first names)
                  [path (fp/exportMarkdown f/mldoc-record content
-                                          (f/get-default-config format heading-to-list? true)
+                                          (f/get-default-config format {:export-heading-to-list? heading-to-list? :export-keep-properties? true})
                                           nil)])))
        (remove nil?)))
 
@@ -559,21 +580,6 @@
                   (.setAttribute anchor "href" url)
                   (.setAttribute anchor "download" path)
                   (.click anchor))))))))))
-
-(defn convert-repo-markdown-v2!
-  [repo]
-  (when repo
-    (when-let [files (get-md-file-contents repo)]
-      (let [zip-file-name (-> (string/replace repo config/local-db-prefix "")
-                              (string/replace #"^/+" ""))
-            zip-file-name (str zip-file-name
-                               "_markdown_"
-                               (quot (util/time-ms) 1000))]
-        (p/let [zipfile (zip/make-zip zip-file-name files repo)]
-          (when-let [anchor (gdom/getElement "convert-markdown-to-unordered-list-or-heading")]
-            (.setAttribute anchor "href" (js/window.URL.createObjectURL zipfile))
-            (.setAttribute anchor "download" (.-name zipfile))
-            (.click anchor)))))))
 
 (defn- dissoc-properties [m ks]
   (if (:block/properties m)

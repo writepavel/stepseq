@@ -26,8 +26,11 @@
 (defn remove-ignore-files
   [files]
   (let [files (remove (fn [f]
-                        (or (string/starts-with? (:file/path f) ".git/")
-                            (string/includes? (:file/path f) ".git/")))
+                        (let [path (:file/path f)]
+                          (or (string/starts-with? path ".git/")
+                              (string/includes? path ".git/")
+                              (and (util/ignored-path? "" path)
+                                   (not= (:file/name f) ".gitignore")))))
                       files)]
     (if-let [ignore-file (some #(when (= (:file/name %) ".gitignore")
                                   %) files)]
@@ -244,7 +247,8 @@
                               (seq diffs))
                       (repo-handler/load-repo-to-db! repo
                                                      {:diffs     diffs
-                                                      :nfs-files modified-files}))))))))
+                                                      :nfs-files modified-files
+                                                      :refresh? (not re-index?)}))))))))
 
 (defn- reload-dir!
   ([repo]

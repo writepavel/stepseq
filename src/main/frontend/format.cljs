@@ -35,10 +35,8 @@
 (defn get-default-config
   ([format]
    (mldoc/default-config format))
-  ([format heading-to-list?]
-   (mldoc/default-config format heading-to-list?))
-  ([format heading-to-list? exporting-keep-properties?]
-   (mldoc/default-config format heading-to-list? exporting-keep-properties?)))
+  ([format options]
+   (mldoc/default-config format options)))
 
 (defn to-html
   ([content format]
@@ -48,7 +46,7 @@
      (if (string/blank? content)
        ""
        (if-let [record (get-format-record format)]
-         (protocol/toHtml record content config)
+         (protocol/toHtml record content config mldoc/default-references)
          content)))))
 
 (defn to-edn

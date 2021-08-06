@@ -6,6 +6,7 @@
             [frontend.handler.route :as route]
             [frontend.handler.page :as page-handler]
             [frontend.db :as db]
+            [frontend.db.model :as model]
             [frontend.handler.search :as search-handler]
             [frontend.ui :as ui]
             [frontend.state :as state]
@@ -140,10 +141,17 @@
 (rum/defc search-auto-complete
   [{:keys [pages files blocks has-more?] :as result} search-q all?]
   (rum/with-context [[t] i18n/*tongue-context*]
-    (let [pages (when-not all? (map (fn [page] {:type :page :data page}) pages))
+    (let [pages (when-not all? (map (fn [page]
+                                      (let [alias (model/get-redirect-page-name page)]
+                                        (cond->
+                                          {:type :page
+                                           :data page}
+                                          (not= (string/lower-case page)
+                                                (string/lower-case alias))
+                                          (assoc :alias alias)))) pages))
           files (when-not all? (map (fn [file] {:type :file :data file}) files))
           blocks (map (fn [block] {:type :block :data block}) blocks)
-          search-mode (state/get-search-mode)
+          search-mode (state/sub :search/mode)
           new-page (if (or
                         (and (seq pages)
                              (= (string/lower-case search-q)
@@ -154,28 +162,36 @@
                      [{:type :new-page}])
           result (if config/publishing?
                    (concat pages files blocks)
-                   (concat new-page pages files blocks))]
+                   (concat new-page pages files blocks))
+          result (if (= search-mode :graph)
+                   [{:type :graph-add-filter}]
+                   result)]
       [:div.rounded-md.shadow-lg.search-ac
        {:style (merge
                 {:top 48
                  :left 32
                  :height 400
                  :width 700
+                 :max-width "100%"
                  :overflow "auto"})
         :class (if all? "search-all" "absolute")}
        (ui/auto-complete
         result
         {:class "search-results"
-         :on-chosen (fn [{:keys [type data]}]
+         :on-chosen (fn [{:keys [type data alias]}]
                       (search-handler/clear-search!)
                       (leave-focus)
                       (case type
+                        :graph-add-filter
+                        (state/add-graph-search-filter! search-q)
+
                         :new-page
                         (page-handler/create! search-q)
 
                         :page
-                        (route/redirect! {:to :page
-                                          :path-params {:name data}})
+                        (let [data (or alias data)]
+                          (route/redirect! {:to :page
+                                            :path-params {:name data}}))
 
                         :file
                         (route/redirect! {:to :file
@@ -192,10 +208,11 @@
                                                :path-params {:name page}
                                                :query-params {:anchor (str "ls-block-" (:block/uuid data))}}))))
                         nil))
-         :on-shift-chosen (fn [{:keys [type data]}]
+         :on-shift-chosen (fn [{:keys [type data alias]}]
                             (case type
                               :page
-                              (let [page (db/entity [:block/name (string/lower-case data)])]
+                              (let [data (or alias data)
+                                    page (db/entity [:block/name (string/lower-case data)])]
                                 (state/sidebar-add-block!
                                  (state/get-current-repo)
                                  (:db/id page)
@@ -211,17 +228,29 @@
                                  :block
                                  block))
 
-                              nil)
-                            (search-handler/clear-search!))
-         :item-render (fn [{:keys [type data]}]
+                              :new-page
+                              (page-handler/create! search-q)
+
+                              :file
+                              (route/redirect! {:to :file
+                                                :path-params {:path data}})
+
+                              nil))
+         :item-render (fn [{:keys [type data alias]}]
                         (let [search-mode (state/get-search-mode)]
                           [:div {:class "py-2"} (case type
+                                                  :graph-add-filter
+                                                  [:b search-q]
+
                                                   :new-page
                                                   [:div.text.font-bold (str (t :new-page) ": ")
                                                    [:span.ml-1 (str "\"" search-q "\"")]]
 
                                                   :page
-                                                  (search-result-item "Page" (highlight-exact-query data search-q))
+                                                  [:span
+                                                   (when alias
+                                                     [:span.mr-2.text-sm.font-medium.mb-2 (str "Alias -> " alias)])
+                                                   (search-result-item "Page" (highlight-exact-query data search-q))]
 
                                                   :file
                                                   (search-result-item "File" (highlight-exact-query data search-q))
@@ -270,7 +299,7 @@
                   :else
                   300)]
     (rum/with-context [[t] i18n/*tongue-context*]
-      [:div#search.flex-1.flex
+      [:div#search.flex-1.flex.p-2
        [:div.inner
         [:label.sr-only {:for "search-field"} (t :search)]
         [:div#search-wrapper.relative.w-full.text-gray-400.focus-within:text-gray-600
@@ -278,7 +307,10 @@
           svg/search]
          [:input#search-field.block.w-full.h-full.pr-3.py-2.rounded-md.focus:outline-none.placeholder-gray-500.focus:placeholder-gray-400.sm:text-sm.sm:bg-transparent
           {:style {:padding-left "2rem"}
-           :placeholder (if (= search-mode :page)
+           :placeholder (case search-mode
+                          :graph
+                          (t :graph-search)
+                          :page
                           (t :page-search)
                           (t :search))
            :auto-complete (if (util/chrome?) "chrome-off" "off") ; off not working here

@@ -4,50 +4,79 @@
             [frontend.handler.editor :as editor-handler]
             [frontend.handler.history :as history]
             [frontend.handler.repo :as repo-handler]
+            [frontend.handler.page :as page-handler]
             [frontend.handler.route :as route-handler]
             [frontend.handler.search :as search-handler]
             [frontend.handler.ui :as ui-handler]
             [frontend.handler.web.nfs :as nfs-handler]
+            [frontend.extensions.srs.handler :as srs]
             [frontend.modules.shortcut.before :as m]
             [frontend.state :as state]
             [frontend.util :refer [mac?]]))
 
+;; TODO: how to extend this for plugins usage? An atom?
 (def default-config
   {:shortcut.handler/date-picker
    {:date-picker/complete
-    {:desc    "Date picker choose selected day"
+    {:desc    "Date picker: Choose selected day"
      :binding "enter"
      :fn      ui-handler/shortcut-complete}
     :date-picker/prev-day
-    {:desc    "Date picker select previous day"
+    {:desc    "Date picker: Select previous day"
      :binding "left"
      :fn      ui-handler/shortcut-prev-day}
     :date-picker/next-day
-    {:desc    "Date picker select next day"
+    {:desc    "Date picker: Select next day"
      :binding "right"
      :fn      ui-handler/shortcut-next-day}
     :date-picker/prev-week
-    {:desc    "Date picker select prev week"
+    {:desc    "Date picker: Select previous week"
      :binding "up"
      :fn      ui-handler/shortcut-prev-week}
     :date-picker/next-week
-    {:desc    "Date picker select next week"
+    {:desc    "Date picker: Select next week"
      :binding "down"
      :fn      ui-handler/shortcut-next-week}}
 
    :shortcut.handler/auto-complete
-   {:auto-complete/prev
-    {:desc    "Auto-complete previous selected item"
+   {:auto-complete/complete
+    {:desc    "Auto-complete: Choose selected item"
+     :binding "enter"
+     :fn      ui-handler/auto-complete-complete}
+    :auto-complete/prev
+    {:desc    "Auto-complete: Select previous item"
      :binding "up"
      :fn      ui-handler/auto-complete-prev}
     :auto-complete/next
-    {:desc    "Auto-complete next selected item"
+    {:desc    "Auto-complete: Select next item"
      :binding "down"
      :fn      ui-handler/auto-complete-next}
-    :auto-complete/complete
-    {:desc    "Auto-complete choose selected item"
-     :binding "enter"
-     :fn      ui-handler/auto-complete-complete}}
+    :auto-complete/shift-complete
+    {:desc    "Auto-complete: Open selected item in sidebar"
+     :binding "shift+enter"
+     :fn      ui-handler/auto-complete-shift-complete}}
+
+   :shortcut.handler/cards
+   {:cards/toggle-answers
+    {:desc    "Cards: show/hide answers/clozes"
+     :binding "s"
+     :fn      srs/toggle-answers}
+    :cards/next-card
+    {:desc    "Cards: next card"
+     :binding "n"
+     :fn      srs/next-card}
+    :cards/forgotten
+    {:desc    "Cards: forgotten"
+     :binding "f"
+     :fn      srs/forgotten}
+    :cards/remembered
+    {:desc    "Cards: remembered"
+     :binding "r"
+     :fn      srs/remembered}
+    :cards/recall
+    {:desc    "Cards: take a while to recall"
+     :binding "t"
+     :fn      srs/recall}}
 
    :shortcut.handler/block-editing-only
    ^{:before m/enable-when-editing-mode!}
@@ -68,7 +97,7 @@
      :binding "enter"
      :fn      editor-handler/keydown-new-block-handler}
     :editor/new-line
-    {:desc    "Newline in block"
+    {:desc    "New line in current block"
      :binding "shift+enter"
      :fn      editor-handler/keydown-new-line-handler}
     :editor/cycle-todo
@@ -100,7 +129,7 @@
      :binding "mod+shift+s"
      :fn      editor-handler/strike-through-format!}
     :editor/insert-link
-    {:desc    "Html Link"
+    {:desc    "HTML Link"
      :binding "mod+k"
      :fn      editor-handler/html-link-format!}
     :editor/move-block-up
@@ -112,39 +141,39 @@
      :binding (if mac? "mod+shift+down" "alt+shift+down")
      :fn      (editor-handler/move-up-down false)}
     :editor/clear-block
-    {:desc    "Clear entire block content"
+    {:desc    "Delete entire block content"
      :binding (if mac? "ctrl+l" "alt+l")
      :fn      editor-handler/clear-block-content!}
     :editor/kill-line-before
-    {:desc    "Kill line before cursor position"
+    {:desc    "Delete line before cursor position"
      :binding (if mac? "ctrl+u" "alt+u")
      :fn      editor-handler/kill-line-before!}
     :editor/kill-line-after
-    {:desc    "Kill line after cursor position"
+    {:desc    "Delete line after cursor position"
      :binding (if mac? false "alt+k")
      :fn      editor-handler/kill-line-after!}
     :editor/beginning-of-block
-    {:desc    "Move cursor to the beginning of block"
+    {:desc    "Move cursor to the beginning of a block"
      :binding (if mac? false "alt+a")
      :fn      editor-handler/beginning-of-block}
     :editor/end-of-block
-    {:desc    "Move cursor to the end of block"
+    {:desc    "Move cursor to the end of a block"
      :binding (if mac? false "alt+e")
      :fn      editor-handler/end-of-block}
     :editor/forward-word
-    {:desc    "Move cursor forward by word"
+    {:desc    "Move cursor forward a word"
      :binding (if mac? "ctrl+shift+f" "alt+f")
      :fn      editor-handler/cursor-forward-word}
     :editor/backward-word
-    {:desc    "Move cursor backward by word"
+    {:desc    "Move cursor backward a word"
      :binding (if mac? "ctrl+shift+b" "alt+b")
      :fn      editor-handler/cursor-backward-word}
     :editor/forward-kill-word
-    {:desc    "Kill a word forwards"
+    {:desc    "Delete a word forwards"
      :binding (if mac? "ctrl+w" "alt+d")
      :fn      editor-handler/forward-kill-word}
     :editor/backward-kill-word
-    {:desc    "Kill a word backwards"
+    {:desc    "Delete a word backwards"
      :binding (if mac? false "alt+w")
      :fn      editor-handler/backward-kill-word}
     :editor/replace-block-reference-at-point
@@ -237,11 +266,11 @@
      :binding "mod+shift+a"
      :fn      editor-handler/select-all-blocks!}
     :editor/zoom-in
-    {:desc    "Zoom in when editing / Forward"
+    {:desc    "Zoom in editing block / Forwards otherwise"
      :binding (if mac? "mod+." "alt+right")
      :fn      editor-handler/zoom-in!}
     :editor/zoom-out
-    {:desc    "Zoom out when editing / Back"
+    {:desc    "Zoom out editing block / Backwards otherwise"
      :binding (if mac? "mod+," "alt+left")
      :fn      editor-handler/zoom-out!}
     :ui/toggle-brackets
@@ -255,11 +284,19 @@
     :go/search
     {:desc    "Full text search"
      :binding "mod+u"
-     :fn      route-handler/go-to-search!}
+     :fn      #(route-handler/go-to-search! :global)}
     :go/journals
     {:desc    "Jump to journals"
      :binding (if mac? "mod+j" "alt+j")
      :fn      route-handler/go-to-journals!}
+    :go/backward
+    {:desc    "Backwards"
+     :binding "mod+open-square-bracket"
+     :fn      (fn [_] (js/window.history.back))}
+    :go/forward
+    {:desc    "Forwards"
+     :binding "mod+close-square-bracket"
+     :fn      (fn [_] (js/window.history.forward))}
     :search/re-index
     {:desc    "Rebuild search index"
      :binding "mod+c mod+s"
@@ -267,7 +304,9 @@
     :graph/re-index
     {:desc    "Re-index the whole graph"
      :binding "mod+c mod+r"
-     :fn      #(repo-handler/re-index! nfs-handler/rebuild-index!)}}
+     :fn      #(repo-handler/re-index!
+                nfs-handler/rebuild-index!
+                page-handler/create-today-journal!)}}
 
    :shortcut.handler/misc
    ;; always overrides the copy due to "mod+c mod+s"
@@ -298,17 +337,21 @@
      :binding "t t"
      :fn      state/toggle-theme!}
     :ui/toggle-contents
-    {:desc    "Toggle Contents in sidebar"
-     :binding "t c"
+    {:desc    "Toggle Favorites in sidebar"
+     :binding "t f"
      :fn      ui-handler/toggle-contents!}
     :ui/toggle-wide-mode
     {:desc    "Toggle wide mode"
      :binding "t w"
      :fn      ui-handler/toggle-wide-mode!}
     :editor/toggle-open-blocks
-    {:desc    "Toggle open blocks, either collapse or expand all blocks"
+    {:desc    "Toggle open blocks (collapse or expand all blocks)"
      :binding "t o"
      :fn      editor-handler/toggle-open!}
+    :ui/toggle-cards
+    {:desc    "toggle cards"
+     :binding "t c"
+     :fn      ui-handler/toggle-cards!}
     ;; :ui/toggle-between-page-and-file route-handler/toggle-between-page-and-file!
     :git/commit
     {:desc    "Git commit message"
@@ -349,7 +392,9 @@
     :editor/zoom-out
     :editor/collapse-block-children
     :editor/expand-block-children
-    :editor/toggle-open-blocks]
+    :editor/toggle-open-blocks
+    :go/backward
+    :go/forward]
 
    :shortcut.category/block-editing
    ^{:doc "Block editing general"}
@@ -394,9 +439,9 @@
    :shortcut.category/toggle
    ^{:doc "Toggle"}
    [:ui/toggle-help
-    :ui/toggle-new-block
     :editor/toggle-open-blocks
     :ui/toggle-wide-mode
+    :ui/toggle-cards
     :ui/toggle-document-mode
     :ui/toggle-brackets
     :ui/toggle-theme
@@ -412,6 +457,7 @@
     :auto-complete/prev
     :auto-complete/next
     :auto-complete/complete
+    :auto-complete/shift-complete
     :date-picker/prev-day
     :date-picker/next-day
     :date-picker/prev-week

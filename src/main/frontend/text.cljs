@@ -82,22 +82,43 @@
                :else
                [(conj acc s) not-matched-s])) [[] nil] coll)))
 
+(defn- sep-by-quotes
+  [s]
+  (string/split s #"(\"[^\"]*\")"))
+
+(def markdown-link #"\[([^\[]+)\](\(.*\))")
 (defn split-page-refs-without-brackets
   ([s]
    (split-page-refs-without-brackets s {}))
   ([s {:keys [un-brackets?]
        :or {un-brackets? true}}]
    (cond
+     (and (string? s) (util/wrapped-by-quotes? s))
+     (util/unquote-string s)
+
+     (and (string? s) (re-find markdown-link s))
+     s
+
      (and (string? s)
             ;; Either a page ref, a tag or a comma separated collection
             (or (util/safe-re-find page-ref-re s)
-                (util/safe-re-find #"[\,|，|#]+" s)))
-     (let [result (->> (string/split s page-ref-re-2)
-                       (mapcat (fn [s] (if (string/includes? (string/trimr s) "]],")
+                (util/safe-re-find #"[\,|，|#|\"]+" s)))
+     (let [result (->> (sep-by-quotes s)
+                       (mapcat
+                        (fn [s]
+                          (when-not (util/wrapped-by-quotes? (string/trim s))
+                            (string/split s page-ref-re-2))))
+                       (mapcat (fn [s] (cond
+                                        (util/wrapped-by-quotes? s)
+                                        nil
+
+                                        (string/includes? (string/trimr s) "]],")
                                         (let [idx (string/index-of s "]],")]
                                           [(subs s 0 idx)
                                            "]]"
                                            (subs s (+ idx 3))])
+
+                                        :else
                                         [s])))
                        (remove #(= % ""))
                        (mapcat (fn [s] (if (string/ends-with? s "]]")
@@ -107,8 +128,14 @@
                        concat-nested-pages
                        (remove string/blank?)
                        (mapcat (fn [s]
-                                 (if (page-ref? s)
+                                 (cond
+                                   (util/wrapped-by-quotes? s)
+                                   nil
+
+                                   (page-ref? s)
                                    [(if un-brackets? (page-ref-un-brackets! s) s)]
+
+                                   :else
                                    (sep-by-comma s))))
                        (distinct))]
        (if (or (coll? result)

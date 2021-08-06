@@ -34,18 +34,20 @@
   (set! js/window.onerror
         (fn [message, source, lineno, colno, error]
           (when-not (error/ignored? message)
-            (notification/show!
-             (str "message=" message "\nsource=" source "\nlineno=" lineno "\ncolno=" colno "\nerror=" error)
-             :error
-             ;; Don't auto-hide
-             false)))))
+            (js/console.error error)
+            ;; (notification/show!
+            ;;  (str "message=" message "\nsource=" source "\nlineno=" lineno "\ncolno=" colno "\nerror=" error)
+            ;;  :error
+            ;;  ;; Don't auto-hide
+            ;;  false)
+            ))))
 
 (defn- watch-for-date!
   []
   (let [f (fn []
             (when-not (state/nfs-refreshing?)
               ;; Don't create the journal file until user writes something
-              (repo-handler/create-today-journal! false))
+              (page-handler/create-today-journal!))
             (when-let [repo (state/get-current-repo)]
               (when (and (search-db/empty? repo)
                          (state/input-idle? repo))
@@ -80,10 +82,11 @@
                                  (assoc me :repos repos)
                                  old-db-schema
                                  (fn [repo]
-                                   (file-handler/restore-config! repo false)
-                                   (ui-handler/add-style-if-exists!))))
+                                   (file-handler/restore-config! repo false))))
                          (p/then
                           (fn []
+                            ;; try to load custom css only for current repo
+                            (ui-handler/add-style-if-exists!)
 
                             ;; install after config is restored
                             (shortcut/refresh!)
@@ -113,7 +116,10 @@
                                  (js/console.error "Failed to request GitHub app tokens."))))
 
                             (watch-for-date!)
-                            (file-handler/watch-for-local-dirs!)))
+                            (file-handler/watch-for-local-dirs!)
+                            ;; (when-not (state/logged?)
+                            ;;   (state/pub-event! [:after-db-restore repos]))
+                            ))
                          (p/catch (fn [error]
                                     (log/error :db/restore-failed error))))))]
     ;; clear this interval

@@ -1,7 +1,9 @@
 (ns frontend.rum
   (:require [clojure.string :as s]
             [clojure.set :as set]
-            [clojure.walk :as w]))
+            [clojure.walk :as w]
+            [rum.core :refer [use-state use-effect!]]
+            [cljs-bean.core :as bean]))
 
 ;; copy from https://github.com/priornix/antizer/blob/35ba264cf48b84e6597743e28b3570d8aa473e74/src/antizer/core.cljs
 
@@ -31,29 +33,59 @@
                 data)))
 
 ;; adapted from https://github.com/tonsky/rum/issues/20
-(defn adapt-class [react-class]
-  (fn [& args]
+(defn adapt-class
+  ([react-class]
+   (adapt-class react-class false))
+  ([react-class skip-opts-transform?]
+   (fn [& args]
     (let [[opts children] (if (map? (first args))
                             [(first args) (rest args)]
                             [{} args])
           type# (first children)
-             ;; we have to make sure to check if the children is sequential
-             ;; as a list can be returned, eg: from a (for)
+          ;; we have to make sure to check if the children is sequential
+          ;; as a list can be returned, eg: from a (for)
           new-children (if (sequential? type#)
                          (let [result (daiquiri.interpreter/interpret children)]
                            (if (sequential? result)
                              result
                              [result]))
                          children)
-             ;; convert any options key value to a react element, if
-             ;; a valid html element tag is used, using sablono
+          ;; convert any options key value to a react element, if
+          ;; a valid html element tag is used, using sablono
           vector->react-elems (fn [[key val]]
                                 (if (sequential? val)
                                   [key (daiquiri.interpreter/interpret val)]
                                   [key val]))
-          new-options (into {} (map vector->react-elems opts))]
-         ;; (.dir js/console new-children)
+          new-options (into {}
+                            (if skip-opts-transform?
+                              opts
+                              (map vector->react-elems opts)))]
       (apply js/React.createElement react-class
-           ;; sablono html-to-dom-attrs does not work for nested hashmaps
-             (clj->js (map-keys->camel-case new-options :html-props true))
-             new-children))))
+        ;; sablono html-to-dom-attrs does not work for nested hashmaps
+        (bean/->js (map-keys->camel-case new-options :html-props true))
+        new-children)))))
+
+(defn use-atom-fn
+  [a getter-fn setter-fn]
+  (let [[val set-val] (use-state (getter-fn @a))]
+    (use-effect!
+      (fn []
+        (let [id (str (random-uuid))]
+          (add-watch a id (fn [_ _ prev-state next-state]
+                            (let [prev-value (getter-fn prev-state)
+                                  next-value (getter-fn next-state)]
+                              (when-not (= prev-value next-value)
+                                (set-val next-value)))))
+          #(remove-watch a id)))
+      [])
+    [val #(swap! a setter-fn %)]))
+
+(defn use-atom
+  "(use-atom my-atom)"
+  [a]
+  (use-atom-fn a identity (fn [_ v] v)))
+
+(defn use-atom-in
+  "(use-atom my-atom [:path :to :data])"
+  [a path]
+  (use-atom-fn a #(get-in % path) #(assoc-in %1 path %2)))

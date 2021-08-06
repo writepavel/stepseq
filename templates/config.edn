@@ -9,26 +9,20 @@
  ;; or ":todo" for TODO/DOING style.
  :preferred-workflow :now
 
- ;; Git is only available in web app
- ;; Git settings
- :git-pull-secs 60
- :git-push-secs 10
- ;; Whether to enable git auto push
- :git-auto-push true
-
  ;; The app will ignore those directories or files.
  ;; E.g. "/archived" "/test.md"
  :hidden []
 
- ;; When creating the new journal page, the app will use your template content here.
- ;; Example for Markdown users: "[[Work]]\n  -\n- [[Family]]\n  -\n"
- ;; Example for Org mode users: "** [[Work]]\n***\n** [[Family]]\n***\n"
+ ;; When creating the new journal page, the app will use your template if there is one.
+ ;; You only need to input your template name here.
  :default-templates
  {:journals ""}
 
  ;; Whether to enable hover on tooltip preview feature
  ;; Default is true, you can also toggle this via setting page
  :ui/enable-tooltip? true
+
+ :feature/enable-block-timestamps? false
 
  ;; Specify a custom CSS import
  ;; This option take precedence over your local `logseq/custom.css` file
@@ -40,7 +34,7 @@
  ;; When :all-pages-public? true, export repo would export all pages within that repo.
  ;; Regardless of whether you've set any page to public or not.
  ;; Example:
- ;; :all-pages-public? true
+ ;; :publishing/all-pages-public? true
 
  ;; Specify default home page and sidebar status for Logseq
  ;; If not specified, Logseq default opens journals page on startup
@@ -100,6 +94,9 @@
 
  ;; Whether to show command doc on hover
  :ui/show-command-doc? true
+
+ ;; Whether to show empty bullets for non-document mode (the default mode)
+ :ui/show-empty-bullets? false
 
  ;; The app will show those queries in today's journal page,
  ;; the "NOW" query asks the tasks which need to be finished "now",
@@ -161,4 +158,15 @@
  ;;
  ;; With the default value of level 2, `b` will be collapsed.
  ;; If we set the level's value to 3, `b` will be opened and `c` will be collapsed.
- :ref/default-open-blocks-level 2}
+ :ref/default-open-blocks-level 2
+
+ ;; any number between 0 and 1 (the greater it is the faster the changes of the next-interval of card reviews) (default 0.5)
+ ;; :srs/learning-fraction 0.5
+
+ ;; the initial interval after the first successful review of a card (default 4)
+ ;; :srs/initial-interval 4
+
+ ;; hide specific properties for blocks
+ ;; E.g. #{:created-at :updated-at}
+ ;; :block-hidden-properties #{}
+ }

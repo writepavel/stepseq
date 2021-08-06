@@ -34,11 +34,11 @@
   ([]
    (clear-search! true))
   ([clear-search-mode?]
-   (let [m (cond-> {:search/result nil
-                    :search/q ""}
-             clear-search-mode?
-             (assoc :search/mode :global))]
+   (let [m {:search/result nil
+            :search/q ""}]
      (swap! state/state merge m))
+   (when (and clear-search-mode? (not= (state/get-search-mode) :graph))
+     (state/set-search-mode! :global))
    (when-let [input (gdom/getElement "search-field")]
      (gobj/set input "value" ""))))
 

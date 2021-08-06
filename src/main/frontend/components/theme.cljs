@@ -1,7 +1,9 @@
 (ns frontend.components.theme
   (:require [rum.core :as rum]
+            [frontend.extensions.pdf.highlights :as pdf]
             [frontend.util :as util]
             [frontend.ui :as ui]
+            [frontend.handler.ui :as ui-handler]
             [frontend.handler.route :as route-handler]
             [frontend.handler.plugin :as plugin-handler]
             [frontend.components.svg :as svg]))
@@ -23,7 +25,10 @@
    [sidebar-open?])
 
   (rum/use-effect!
-    #(plugin-handler/hook-plugin-app :current-graph-changed {})
+    (fn []
+      (ui-handler/add-style-if-exists!)
+      (pdf/reset-current-pdf!)
+      (plugin-handler/hook-plugin-app :current-graph-changed {}))
     [current-repo])
 
   (rum/use-effect!
@@ -42,4 +47,6 @@
   [:div
    {:class    (str theme "-theme")
     :on-click on-click}
-   child])
+   child
+
+   (pdf/playground)])

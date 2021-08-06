@@ -4,7 +4,7 @@
             [frontend.components.svg :as svg]
             [frontend.components.page :as page]
             [frontend.components.block :as block]
-            [frontend.extensions.graph-2d :as graph-2d]
+            [frontend.extensions.graph :as graph]
             [frontend.components.onboarding :as onboarding]
             [frontend.handler.route :as route-handler]
             [frontend.handler.page :as page-handler]
@@ -19,7 +19,6 @@
             [frontend.extensions.slide :as slide]
             [cljs-bean.core :as bean]
             [goog.object :as gobj]
-            [frontend.graph :as graph]
             [frontend.context.i18n :as i18n]
             [reitit.frontend.easy :as rfe]
             [frontend.db-mixins :as db-mixins]
@@ -28,7 +27,7 @@
 (rum/defc toggle
   []
   (when-not (util/mobile?)
-    [:a.opacity-60.hover:opacity-100.ml-4 {:on-click state/toggle-sidebar-open?!}
+    [:a.button {:on-click state/toggle-sidebar-open?!}
     (svg/menu)]))
 
 (rum/defc block-cp < rum/reactive
@@ -45,25 +44,6 @@
               :sidebar?   true
               :repo       repo}))
 
-(rum/defc page-graph < db-mixins/query rum/reactive
-  []
-  (let [page (or
-              (and (= :page (state/sub [:route-match :data :name]))
-                   (state/sub [:route-match :path-params :name]))
-              (date/today))
-        theme (:ui/theme @state/state)
-        dark? (= theme "dark")
-        graph (if (util/uuid-string? page)
-                (graph-handler/build-block-graph (uuid page) theme)
-                (graph-handler/build-page-graph page theme))]
-    (when (seq (:nodes graph))
-      [:div.sidebar-item.flex-col
-       (graph-2d/graph
-        (graph/build-graph-opts
-         graph dark?
-         {:width  600
-          :height 600}))])))
-
 (defn recent-pages
   []
   (let [pages (->> (db/get-key-value :recent/pages)
@@ -72,7 +52,7 @@
     [:div.recent-pages.text-sm.flex-col.flex.ml-3.mt-2
      (if (seq pages)
        (for [page pages]
-         [:a.mb-1 {:key      (str "recent-page-" page)
+         [:a.page-ref.mb-1 {:key      (str "recent-page-" page)
                    :href     (rfe/href :page {:name page})
                    :on-click (fn [e]
                                (when (gobj/get e "shiftKey")
@@ -107,7 +87,7 @@
 
     :page-graph
     [(str (t :right-side-bar/page-graph))
-     (page-graph)]
+     (page/page-graph)]
 
     :block-ref
     (when-let [block (db/entity repo [:block/uuid (:block/uuid (:block block-data))])]
@@ -132,8 +112,11 @@
 
     :page
     (let [page-name (or (:block/name block-data)
-                        db-id)]
-      [[:a {:href     (rfe/href :page {:name page-name})
+                        db-id)
+          page-name (if (integer? db-id)
+                      (:block/name (db/entity db-id))
+                      page-name)]
+      [[:a.page-title {:href     (rfe/href :page {:name page-name})
             :on-click (fn [e]
                         (when (gobj/get e "shiftKey")
                           (.preventDefault e)))}
@@ -257,14 +240,14 @@
         theme (state/sub :ui/theme)
         t (i18n/use-tongue)]
     (rum/with-context [[t] i18n/*tongue-context*]
-      [:div#right-sidebar.cp__right-sidebar.h-screen.scrollbar-spacing
+      [:div#right-sidebar.cp__right-sidebar.h-screen
        {:class (if sidebar-open? "open" "closed")}
        (if sidebar-open?
          [:div.cp__right-sidebar-inner.flex.flex-col.h-full#right-sidebar-container
 
           (sidebar-resizer)
           [:div.cp__right-sidebar-scrollable
-           [:div.cp__right-sidebar-topbar.flex.flex-row.justify-between.items-center.px-4.h-12
+           [:div.cp__right-sidebar-topbar.flex.flex-row.justify-between.items-center.pl-4.pr-2.h-12
            [:div.cp__right-sidebar-settings.hide-scrollbar {:key "right-sidebar-settings"}
             [:div.ml-4.text-sm
              [:a.cp__right-sidebar-settings-btn {:on-click (fn [e]
@@ -298,7 +281,7 @@
                                              :margin-right 2}}
               (toggle)])]
 
-           [:.sidebar-item-list.flex-1
+           [:.sidebar-item-list.flex-1.scrollbar-spacing {:style {:height "100vh"}}
             (for [[idx [repo db-id block-type block-data]] (medley/indexed blocks)]
               (rum/with-key
                 (sidebar-item repo idx db-id block-type block-data t)

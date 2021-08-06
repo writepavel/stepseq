@@ -1,38 +1,28 @@
 (ns frontend.components.sidebar
-  (:require [rum.core :as rum]
-            [frontend.ui :as ui]
-            [frontend.components.theme :as theme]
-            [frontend.mixins :as mixins]
-            [frontend.db-mixins :as db-mixins]
-            [frontend.db :as db]
-            [frontend.components.widgets :as widgets]
-            [frontend.components.journal :as journal]
-            [frontend.components.page :as page]
-            [frontend.components.settings :as settings]
-            [frontend.components.svg :as svg]
-            [frontend.components.repo :as repo]
-            [frontend.components.commit :as commit]
-            [frontend.components.header :as header]
-            [frontend.components.right-sidebar :as right-sidebar]
-            [frontend.storage :as storage]
-            [frontend.util :as util]
-            [frontend.state :as state]
-            [frontend.handler.ui :as ui-handler]
-            [frontend.handler.user :as user-handler]
-            [frontend.handler.editor :as editor-handler]
-            [frontend.handler.route :as route-handler]
-            [frontend.handler.export :as export]
-            [frontend.handler.repo :as repo-handler]
-            [frontend.handler.web.nfs :as nfs-handler]
-            [frontend.config :as config]
-            [dommy.core :as d]
+  (:require [cljs-drag-n-drop.core :as dnd]
             [clojure.string :as string]
-            [goog.object :as gobj]
+            [frontend.components.header :as header]
+            [frontend.components.journal :as journal]
+            [frontend.components.repo :as repo]
+            [frontend.components.right-sidebar :as right-sidebar]
+            [frontend.components.settings :as settings]
+            [frontend.components.theme :as theme]
+            [frontend.components.widgets :as widgets]
+            [frontend.config :as config]
             [frontend.context.i18n :as i18n]
-            [reitit.frontend.easy :as rfe]
-            [goog.dom :as gdom]
+            [frontend.db :as db]
+            [frontend.db-mixins :as db-mixins]
+            [frontend.handler.editor :as editor-handler]
+            [frontend.handler.repo :as repo-handler]
+            [frontend.handler.route :as route-handler]
             [frontend.handler.web.nfs :as nfs-handler]
-            [cljs-drag-n-drop.core :as dnd]))
+            [frontend.mixins :as mixins]
+            [frontend.modules.shortcut.data-helper :as shortcut-dh]
+            [frontend.state :as state]
+            [frontend.ui :as ui]
+            [frontend.util :as util]
+            [goog.dom :as gdom]
+            [rum.core :as rum]))
 
 (defn nav-item
   [title href svg-d active? close-modal-fn]
@@ -110,54 +100,43 @@
   {:did-mount (fn [state]
                 (when-let [element (gdom/getElement "main-content")]
                   (dnd/subscribe!
-                   element
-                   :upload-files
-                   {:drop (fn [e files]
-                            (when-let [id (state/get-edit-input-id)]
-                              (let [format (:block/format (state/get-edit-block))]
-                                (editor-handler/upload-asset id files format editor-handler/*asset-uploading? true))))}))
+                    element
+                    :upload-files
+                    {:drop (fn [e files]
+                             (when-let [id (state/get-edit-input-id)]
+                               (let [format (:block/format (state/get-edit-block))]
+                                 (editor-handler/upload-asset id files format editor-handler/*asset-uploading? true))))}))
                 state)}
   [{:keys [route-match global-graph-pages? logged? home? route-name indexeddb-support? white? db-restoring? main-content]}]
-  (ui/catch-error
-   [:div#main-content-container.w-full.flex.justify-center
-    [:div.mt-8
-     [:span.error "⚠️ Oops, Something Went Wrong, please back up your data first!"]
-     [:div.my-2 "Usually, a re-index could fix it. If it doesn't, you can join our "
-      [:a.inline {:href "https://discord.gg/KpN4eHY"
-                  :target "_blank"}
-       "discord group"]
-      " to ask for help."]
-     (ui/button "Re-index current graph"
-       :on-click #(repo-handler/re-index! nfs-handler/rebuild-index!))]]
-   (rum/with-context [[t] i18n/*tongue-context*]
-     [:div#main-content.cp__sidebar-main-layout.flex-1.flex
-      [:div#sidebar-nav-wrapper.flex-col.pt-4.hidden.sm:block
-       {:style {:flex (if (state/get-left-sidebar-open?)
-                        "0 1 20%"
-                        "0 0 0px")
-                :border-right (str "1px solid "
-                                   (if white? "#f0f8ff" "#073642"))}}
-       (when (state/sub :ui/left-sidebar-open?)
-         (sidebar-nav route-match nil))]
-      [:div#main-content-container.w-full.flex.justify-center
-       {:style {:margin-top (if global-graph-pages? 0 "2rem")}}
-       [:div.cp__sidebar-main-content
-        {:data-is-global-graph-pages global-graph-pages?
-         :data-is-full-width (or global-graph-pages?
-                                 (contains? #{:all-files :all-pages :my-publishing} route-name))}
-        (cond
-          (not indexeddb-support?)
-          nil
+  (rum/with-context [[t] i18n/*tongue-context*]
+                    [:div#main-content.cp__sidebar-main-layout.flex-1.flex
+                     [:div#sidebar-nav-wrapper.flex-col.pt-4.hidden.sm:block
+                      {:style {:flex (if (state/get-left-sidebar-open?)
+                                       "0 1 20%"
+                                       "0 0 0px")
+                               :border-right (str "1px solid "
+                                                  (if white? "#f0f8ff" "#073642"))}}
+                      (when (state/sub :ui/left-sidebar-open?)
+                        (sidebar-nav route-match nil))]
+                     [:div#main-content-container.w-full.flex.justify-center
+                      {:style {:margin-top (if global-graph-pages? 0 "2rem")}}
+                      [:div.cp__sidebar-main-content
+                       {:data-is-global-graph-pages global-graph-pages?
+                        :data-is-full-width (or global-graph-pages?
+                                                (contains? #{:all-files :all-pages :my-publishing} route-name))}
+                       (cond
+                         (not indexeddb-support?)
+                         nil
 
-          db-restoring?
-          [:div.mt-20
-           [:div.ls-center
-            (ui/loading (t :loading))]]
+                         db-restoring?
+                         [:div.mt-20
+                          [:div.ls-center
+                           (ui/loading (t :loading))]]
 
-          :else
-          [:div.pb-24 {:class (if global-graph-pages? "" (util/hiccup->class "max-w-7xl.mx-auto"))
-                       :style {:margin-bottom (if global-graph-pages? 0 120)}}
-           main-content])]]])))
+                         :else
+                         [:div.pb-24 {:class (if global-graph-pages? "" (util/hiccup->class "max-w-7xl.mx-auto"))
+                                      :style {:margin-bottom (if global-graph-pages? 0 120)}}
+                          main-content])]]]))
 
 (rum/defc footer
   []
@@ -177,23 +156,23 @@
 ;; TODO: simplify logic
 
 (rum/defc main-content < rum/reactive db-mixins/query
-  {:init (fn [state]
-           (when-not @sidebar-inited?
-             (let [current-repo (state/sub :git/current-repo)
-                   default-home (get-default-home-if-valid)
-                   sidebar (:sidebar default-home)
-                   sidebar (if (string? sidebar) [sidebar] sidebar)]
-               (when-let [pages (->> (seq sidebar)
-                                     (remove nil?))]
-                 (let [blocks (remove nil? pages)]
-                   (doseq [page pages]
-                     (let [page (string/lower-case page)
-                           [db-id block-type] (if (= page "contents")
-                                                ["contents" :contents]
-                                                [page :page])]
-                       (state/sidebar-add-block! current-repo db-id block-type nil))))
-                 (reset! sidebar-inited? true))))
-           state)}
+                         {:init (fn [state]
+                                  (when-not @sidebar-inited?
+                                    (let [current-repo (state/sub :git/current-repo)
+                                          default-home (get-default-home-if-valid)
+                                          sidebar (:sidebar default-home)
+                                          sidebar (if (string? sidebar) [sidebar] sidebar)]
+                                      (when-let [pages (->> (seq sidebar)
+                                                            (remove nil?))]
+                                        (let [blocks (remove nil? pages)]
+                                          (doseq [page pages]
+                                            (let [page (string/lower-case page)
+                                                  [db-id block-type] (if (= page "contents")
+                                                                       ["contents" :contents]
+                                                                       [page :page])]
+                                              (state/sidebar-add-block! current-repo db-id block-type nil))))
+                                        (reset! sidebar-inited? true))))
+                                  state)}
   []
   (let [today (state/sub :today)
         cloning? (state/sub :repo/cloning?)
@@ -207,60 +186,60 @@
         preferred-format (state/sub [:me :preferred_format])
         logged? (:name me)]
     (rum/with-context [[t] i18n/*tongue-context*]
-      [:div
-       (cond
-         (and default-home
-              (= :home (state/get-current-route))
-              (not (state/route-has-p?))
-              (:page default-home))
-         (route-handler/redirect! {:to :page
-                                   :path-params {:name (:page default-home)}})
+                      [:div
+                       (cond
+                         (and default-home
+                              (= :home (state/get-current-route))
+                              (not (state/route-has-p?))
+                              (:page default-home))
+                         (route-handler/redirect! {:to :page
+                                                   :path-params {:name (:page default-home)}})
 
-         (and config/publishing?
-              (not default-home)
-              (empty? latest-journals))
-         (route-handler/redirect! {:to :all-pages})
+                         (and config/publishing?
+                              (not default-home)
+                              (empty? latest-journals))
+                         (route-handler/redirect! {:to :all-pages})
 
-         importing-to-db?
-         (ui/loading (t :parsing-files))
+                         importing-to-db?
+                         (ui/loading (t :parsing-files))
 
-         loading-files?
-         (ui/loading (t :loading-files))
+                         loading-files?
+                         (ui/loading (t :loading-files))
 
-         (and (not logged?) (seq latest-journals))
-         (journal/journals latest-journals)
+                         (and (not logged?) (seq latest-journals))
+                         (journal/journals latest-journals)
 
-         (and logged? (not preferred-format))
-         (widgets/choose-preferred-format)
+                         (and logged? (not preferred-format))
+                         (widgets/choose-preferred-format)
 
-         ;; TODO: delay this
-         (and logged? (nil? (:email me)))
-         (settings/set-email)
+                         ;; TODO: delay this
+                         (and logged? (nil? (:email me)))
+                         (settings/set-email)
 
-         cloning?
-         (ui/loading (t :cloning))
+                         cloning?
+                         (ui/loading (t :cloning))
 
-         (seq latest-journals)
-         (journal/journals latest-journals)
+                         (seq latest-journals)
+                         (journal/journals latest-journals)
 
-         (and logged? (empty? (:repos me)))
-         (widgets/add-graph)
+                         (and logged? (empty? (:repos me)))
+                         (widgets/add-graph)
 
-         ;; FIXME: why will this happen?
-         :else
-         [:div])])))
+                         ;; FIXME: why will this happen?
+                         :else
+                         [:div])])))
 
 (rum/defc custom-context-menu < rum/reactive
   []
   (when (state/sub :custom-context-menu/show?)
     (when-let [links (state/sub :custom-context-menu/links)]
       (ui/css-transition
-       {:class-names "fade"
-        :timeout {:enter 500
-                  :exit 300}}
-       links
-       ;; (custom-context-menu-content)
-       ))))
+        {:class-names "fade"
+         :timeout {:enter 500
+                   :exit 300}}
+        links
+        ;; (custom-context-menu-content)
+        ))))
 
 (rum/defc new-block-mode < rum/reactive
   []
@@ -268,22 +247,27 @@
     (ui/tippy {:html [:div.p-2
                       [:p.mb-2 [:b "Document mode"]]
                       [:ul
-                       [:li "Shift + Enter to create new block"]
-                       [:li "Click `D` or type `t d` to toggle document mode"]]]}
-     [:a.px-1.text-sm.font-medium.bg-base-2.mr-4.rounded-md
-      {:on-click state/toggle-document-mode!}
-      "D"])))
+                       [:li
+                        [:div.inline-block.mr-1 (ui/keyboard-shortcut (shortcut-dh/gen-shortcut-seq :editor/new-line))]
+                        [:p.inline-block  "to create new block"]]
+                       [:li
+                        [:p.inline-block.mr-1 "Click `D` or type"]
+                        [:div.inline-block.mr-1 (ui/keyboard-shortcut (shortcut-dh/gen-shortcut-seq :ui/toggle-document-mode))]
+                        [:p.inline-block "to toggle document mode"]]]]}
+              [:a.block.px-1.text-sm.font-medium.bg-base-2.rounded-md.mx-2
+               {:on-click state/toggle-document-mode!}
+               "D"])))
 
 (rum/defc help-button < rum/reactive
   []
   (when-not (state/sub :ui/sidebar-open?)
     ;; TODO: remove with-context usage
     (rum/with-context [[t] i18n/*tongue-context*]
-      [:div.cp__sidebar-help-btn
-       {:title (t :help-shortcut-title)
-        :on-click (fn []
-                    (state/sidebar-add-block! (state/get-current-repo) "help" :help nil))}
-       "?"])))
+                      [:div.cp__sidebar-help-btn
+                       {:title (t :help-shortcut-title)
+                        :on-click (fn []
+                                    (state/sidebar-add-block! (state/get-current-repo) "help" :help nil))}
+                       "?"])))
 
 (rum/defc settings-modal < rum/reactive
   []
@@ -291,7 +275,7 @@
     (if settings-open?
       (do
         (state/set-modal!
-         (fn [] [:div.settings-modal (settings/settings)]))
+          (fn [] [:div.settings-modal (settings/settings)]))
         (util/lock-global-scroll settings-open?))
       (state/set-modal! nil))
     nil))
@@ -305,7 +289,7 @@
                     (fn [e]
                       ;; hide context menu
                       (state/hide-custom-context-menu!)
-                      (editor-handler/clear-selection! e)))))
+                      (editor-handler/clear-selection!)))))
   [state route-match main-content]
   (let [{:keys [open? close-fn open-fn]} state
         close-fn (fn []
@@ -335,54 +319,50 @@
         :db-restoring? db-restoring?
         :sidebar-open? sidebar-open?
         :system-theme? system-theme?
-        :on-click      #(do
-                          (editor-handler/unhighlight-blocks!)
-                          (util/fix-open-external-with-shift! %))}
+        :on-click      (fn [e]
+                         (editor-handler/unhighlight-blocks!)
+                         (util/fix-open-external-with-shift! e))}
 
-       [:div.theme-inner
-        (sidebar-mobile-sidebar
-         {:open?       open?
-          :close-fn    close-fn
-          :route-match route-match})
-        [:div.#app-container.h-screen.flex
-         [:div.flex-1.h-full.w-full.flex.flex-col#left-container.relative
-          [:div.scrollbar-spacing#main-container
-           (header/header {:open-fn        open-fn
-                           :white?         white?
-                           :current-repo   current-repo
-                           :logged?        logged?
-                           :page?          page?
-                           :route-match    route-match
-                           :me             me
-                           :default-home   default-home
-                           :new-block-mode new-block-mode})
+                        [:div.theme-inner
+                         (sidebar-mobile-sidebar
+                           {:open?       open?
+                            :close-fn    close-fn
+                            :route-match route-match})
+                         [:div.#app-container.h-screen.flex
+                          [:div.flex-1.h-full.flex.flex-col#left-container.relative
+                           {:class (if (state/sub :ui/sidebar-open?) "overflow-hidden" "w-full")}
+                           (header/header {:open-fn        open-fn
+                                           :white?         white?
+                                           :current-repo   current-repo
+                                           :logged?        logged?
+                                           :page?          page?
+                                           :route-match    route-match
+                                           :me             me
+                                           :default-home   default-home
+                                           :new-block-mode new-block-mode})
 
-           (main {:route-match         route-match
-                  :global-graph-pages? global-graph-pages?
-                  :logged?             logged?
-                  :home?               home?
-                  :route-name          route-name
-                  :indexeddb-support?  indexeddb-support?
-                  :white?              white?
-                  :db-restoring?       db-restoring?
-                  :main-content        main-content})
+                           [:div#main-container.scrollbar-spacing
+                            (main {:route-match         route-match
+                                   :global-graph-pages? global-graph-pages?
+                                   :logged?             logged?
+                                   :home?               home?
+                                   :route-name          route-name
+                                   :indexeddb-support?  indexeddb-support?
+                                   :white?              white?
+                                   :db-restoring?       db-restoring?
+                                   :main-content        main-content})]
 
-           (footer)]]
-         (right-sidebar/sidebar)]
+                           (footer)]
+                          (right-sidebar/sidebar)
 
-        (ui/notification)
-        (ui/modal)
-        (settings-modal)
-        (custom-context-menu)
-        [:a#download.hidden]
-        (when
-         (and (not config/mobile?)
-              (not config/publishing?))
-          (help-button)
-         ;; [:div.font-bold.absolute.bottom-4.bg-base-2.rounded-full.h-8.w-8.flex.items-center.justify-center.font-bold.cursor.opacity-70.hover:opacity-100
-         ;;  {:style {:left 24}
-         ;;   :title "Click to show/hide sidebar"
-         ;;   :on-click (fn []
-         ;;               (state/set-left-sidebar-open! (not (state/get-left-sidebar-open?))))}
-         ;;  (if (state/sub :ui/left-sidebar-open?) "<" ">")]
-          )]))))
+                          [:div#app-single-container]]
+
+                         (ui/notification)
+                         (ui/modal)
+                         (settings-modal)
+                         (custom-context-menu)
+                         [:a#download.hidden]
+                         (when
+                           (and (not config/mobile?)
+                                (not config/publishing?))
+                           (help-button))]))))

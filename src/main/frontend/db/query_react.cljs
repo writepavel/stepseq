@@ -49,6 +49,15 @@
     :else
     input))
 
+(defn- remove-nested-children-blocks
+  [blocks]
+  (let [ids (set (map :db/id blocks))]
+    (->> blocks
+         (remove
+          (fn [block]
+            (let [id (:db/id (:block/parent block))]
+              (contains? ids id)))))))
+
 (defn custom-query-result-transform
   [query-result remove-blocks q]
   (try
@@ -63,8 +72,9 @@
                                               result))
                                     result)]
                        (some->> result
+                                remove-nested-children-blocks
+                                (model/sort-by-left-recursive)
                                 (db-utils/with-repo repo)
-                                (model/with-block-refs-count repo)
                                 (model/with-pages)))
                      result)]
         (if-let [result-transform (:result-transform q)]
@@ -75,9 +85,7 @@
                 (log/error :sci/call-error e)
                 result))
             result)
-          (if block?
-            (db-utils/group-by-page result)
-            result))))
+          result)))
     (catch js/Error e
       (log/error :query/failed e))))
 

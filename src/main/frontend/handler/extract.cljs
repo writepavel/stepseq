@@ -43,8 +43,10 @@
                                     (string? title)
                                     title))
             file-name (when-let [file-name (last (string/split file #"/"))]
-                        (-> (first (util/split-last "." file-name))
-                            (string/replace "." "/")))]
+                        (let [result (first (util/split-last "." file-name))]
+                          (if (config/mldoc-support? (string/lower-case (util/get-file-ext file)))
+                            (string/replace result "." "/")
+                            result)))]
         (or property-name
             (if (= (state/page-name-order) "heading")
               (or first-block-name file-name)
@@ -58,7 +60,7 @@
           page (get-page-name file ast)
           [page page-name journal-day] (block/convert-page-if-journal page)
           blocks (->> (block/extract-blocks ast content false format)
-                      (block/with-parent-and-left [:block/name (string/lower-case page)]))
+                      (block/with-parent-and-left {:block/name (string/lower-case page)}))
           ref-pages (atom #{})
           ref-tags (atom #{})
           blocks (map (fn [block]
@@ -77,9 +79,9 @@
                                      :block/path-refs block-path-ref-pages))))
                    blocks)
           page-entity (let [page-file? (= page (string/lower-case file))
-                            aliases (and (:alias properties)
-                                         (seq (remove #(= page %)
-                                                      (:alias properties))))
+                            alias (:alias properties)
+                            alias (if (string? alias) [alias] alias)
+                            aliases (and alias (seq (remove #(= page %) alias)))
                             page-list (when-let [list-content (:list properties)]
                                         (extract-page-list list-content))]
                         (cond->
@@ -111,8 +113,9 @@
                                    aliases))
 
                           (:tags properties)
-                          (assoc :block/tags (let [tags (->> (:tags properties)
-                                                             (remove string/blank?))]
+                          (assoc :block/tags (let [tags (:tags properties)
+                                                   tags (if (string? tags) [tags] tags)
+                                                   tags (remove string/blank? tags)]
                                                (swap! ref-tags set/union (set tags))
                                                (map (fn [tag] {:block/name (string/lower-case tag)
                                                               :block/original-name tag})
@@ -128,9 +131,11 @@
                      ;; remove block references
                      (remove vector?))
           pages (util/distinct-by :block/name pages)
-          block-ids (mapv (fn [block]
-                            {:block/uuid (:block/uuid block)})
-                          (remove nil? blocks))
+          block-ids (->>
+                     (mapv (fn [block]
+                             {:block/uuid (:block/uuid block)})
+                           (remove nil? blocks))
+                     (remove nil?))
           pages (remove nil? pages)
           pages (map (fn [page] (assoc page :block/uuid (db/new-block-id))) pages)]
       [pages
@@ -187,37 +192,46 @@
          (map (partial apply merge))
          (with-block-uuid))))
 
+(defn- remove-illegal-refs
+  [block block-ids-set refresh?]
+  (let [aux-fn (fn [refs]
+                 (let [block-refs (if refresh? (set refs)
+                                      (set/intersection (set refs) block-ids-set))]
+                   (set/union
+                    (filter :block/name refs)
+                    block-refs)))]
+    (-> block
+        (update :block/refs aux-fn)
+        (update :block/path-refs aux-fn))))
+
 (defn extract-all-blocks-pages
-  [repo-url files metadata]
+  [repo-url files metadata refresh?]
   (when (seq files)
     (let [result (->> files
                       (map
-                       (fn [{:file/keys [path content]} contents]
-                         (println "Parsing : " path)
-                         (when content
-                           ;; TODO: remove `text/scheduled-deadline-dash->star` once migration is done
-                           (let [org? (= "org" (string/lower-case (util/get-file-ext path)))]
-                             (let [content (if org?
-                                             content
-                                             (text/scheduled-deadline-dash->star content))
-                                   utf8-content (utf8/encode content)]
-                              (extract-blocks-pages repo-url path content utf8-content))))))
+                        (fn [{:file/keys [path content]} contents]
+                          (println "Parsing : " path)
+                          (when content
+                            ;; TODO: remove `text/scheduled-deadline-dash->star` once migration is done
+                            (let [org? (= "org" (string/lower-case (util/get-file-ext path)))]
+                              (let [content (if org?
+                                              content
+                                              (text/scheduled-deadline-dash->star content))
+                                    utf8-content (utf8/encode content)]
+                                (extract-blocks-pages repo-url path content utf8-content))))))
                       (remove empty?))]
       (when (seq result)
         (let [[pages block-ids blocks] (apply map concat result)
+              block-ids (remove (fn [b] (or (nil? b)
+                                           (nil? (:block/uuid b)))) block-ids)
               pages (with-ref-pages pages blocks)
               blocks (map (fn [block]
                             (let [id (:block/uuid block)
                                   properties (get-in metadata [:block/properties id])]
                               (update block :block/properties merge properties)))
-                          blocks)
+                       blocks)
               ;; To prevent "unique constraint" on datascript
               pages-index (map #(select-keys % [:block/name]) pages)
               block-ids-set (set (map (fn [{:block/keys [uuid]}] [:block/uuid uuid]) block-ids))
-              blocks (map (fn [b]
-                            (update b :block/refs
-                                    (fn [refs]
-                                      (set/union
-                                       (filter :block/name refs)
-                                       (set/intersection (set refs) block-ids-set))))) blocks)]
+              blocks (map #(remove-illegal-refs % block-ids-set refresh?) blocks)]
           (apply concat [pages-index pages block-ids blocks]))))))

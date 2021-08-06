@@ -12,6 +12,8 @@
 (goog-define PUBLISHING false)
 (defonce publishing? PUBLISHING)
 
+(reset! state/publishing? publishing?)
+
 (def test? false)
 
 ;; :TODO: How to do this?
@@ -81,7 +83,7 @@
                                 (set))]
     (set/union
      config-formats
-     #{:gif :svg :jpeg :ico :png :jpg :bmp})))
+     #{:gif :svg :jpeg :ico :png :jpg :bmp :webp})))
 
 (def html-render-formats
   #{:adoc :asciidoc})
@@ -165,7 +167,7 @@
 
 (defn get-highlight
   [format]
-  "^^")
+  "==")
 
 (defn get-code
   [format]
@@ -287,9 +289,11 @@
 
 (defonce local-repo "local")
 (defonce local-assets-dir "assets")
+(defonce recycle-dir ".recycle")
 (def config-file "config.edn")
 (def custom-css-file "custom.css")
 (def metadata-file "metadata.edn")
+(def pages-metadata-file "pages-metadata.edn")
 
 (def config-default-content (rc/inline "config.edn"))
 
@@ -367,6 +371,13 @@
    (when repo
      (get-file-path repo (str app-name "/" metadata-file)))))
 
+(defn get-pages-metadata-path
+  ([]
+   (get-pages-metadata-path (state/get-current-repo)))
+  ([repo]
+   (when repo
+     (get-file-path repo (str app-name "/" pages-metadata-file)))))
+
 (defn get-custom-css-path
   ([]
    (get-custom-css-path (state/get-current-repo)))
@@ -374,3 +385,7 @@
    (when repo
      (get-file-path repo
                     (str app-name "/" custom-css-file)))))
+
+(defn get-block-hidden-properties
+  []
+  (get-in @state/state [:config (state/get-current-repo) :block-hidden-properties]))

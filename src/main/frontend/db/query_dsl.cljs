@@ -6,6 +6,7 @@
             [clojure.string :as string]
             [frontend.text :as text]
             [frontend.db.query-react :as react]
+            [frontend.db.model :as model]
             [frontend.date :as date]
             [cljs-time.core :as t]
             [cljs-time.coerce :as tc]
@@ -50,15 +51,15 @@
   [where blocks?]
   (when where
     (let [q (if blocks?                   ; FIXME: it doesn't need to be either blocks or pages
-             '[:find (pull ?b [*])
-               :where]
-               '[:find (pull ?p [*])
-                 :where])
-         result (if (coll? (first where))
-                  (apply conj q where)
-                  (conj q where))]
-     (prn "Datascript query: " result)
-     result)))
+              `[:find (~'pull ~'?b ~model/block-attrs)
+                :where]
+              '[:find (pull ?p [*])
+                :where])
+          result (if (coll? (first where))
+                   (apply conj q where)
+                   (conj q where))]
+      (prn "Datascript query: " result)
+      result)))
 
 ;; (between -7d +7d)
 (defn- ->journal-day-int [input]
@@ -299,16 +300,23 @@
                      (keyword (string/lower-case (name order)))
                      :desc)
              k (-> (string/lower-case (name k))
-                   (string/replace "-" "_"))]
-         (when (contains? #{"created_at" "last_modified_at"} k)
-           (let [comp (if (= order :desc) >= <=)]
-             (reset! sort-by
-                     (fn [result]
-                       (->> result
-                            flatten
-                            (clojure.core/sort-by #(get-in % [:block/properties k])
-                                                  comp))))
-             nil)))
+                   (string/replace "_" "-"))]
+         (let [get-value (cond
+                           (= k "created-at")
+                           :block/created-at
+
+                           (= k "updated-at")
+                           :block/updated-at
+
+                           :else
+                           #(get-in % [:block/properties k]))
+               comp (if (= order :desc) >= <=)]
+           (reset! sort-by
+                   (fn [result]
+                     (->> result
+                          flatten
+                          (clojure.core/sort-by get-value comp))))
+           nil))
 
        (= 'page fe)
        (let [page-name (string/lower-case (first (rest e)))
@@ -442,9 +450,12 @@
               result)
             (when-let [query (query-wrapper query blocks?)]
               (react/react-query repo
-                                 {:query query}
-                                 (if sort-by
-                                   {:transform-fn sort-by})))))))))
+                                 {:query query
+                                  :query-string query-string}
+                                 (cond->
+                                   {:use-cache? false}
+                                   sort-by
+                                   (assoc :transform-fn sort-by))))))))))
 
 (defn custom-query
   [repo query-m query-opts]

@@ -30,7 +30,7 @@
                    :height        (.-height win-state)
                    :frame         true
                    :titleBarStyle "hiddenInset"
-                   :trafficLightPosition {:x 15 :y 15}
+                   :trafficLightPosition {:x 16 :y 16}
                    :autoHideMenuBar (not mac?)
                    :webPreferences
                    {:plugins                 true ; pdf
@@ -87,9 +87,13 @@
                             (. fs copy (path/join app-path "404.html") (path/join root-dir "404.html"))]
 
                            (map
-                            (fn [filename] (. fs copy (path/join assets-from-dir filename) (path/join assets-to-dir filename)))
-
-                            asset-filenames)
+                             (fn [filename]
+                               (-> (. fs copy (path/join assets-from-dir filename) (path/join assets-to-dir filename))
+                                   (p/catch
+                                       (fn [e]
+                                         (println (str "Failed to copy " (path/join assets-from-dir filename) " to " (path/join assets-to-dir filename)))
+                                         (js/console.error e)))))
+                             asset-filenames)
 
                            (map
                             (fn [part]

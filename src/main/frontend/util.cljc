@@ -4,6 +4,8 @@
   #?(:cljs (:require
             ["/frontend/selection" :as selection]
             ["/frontend/utils" :as utils]
+            [camel-snake-kebab.core :as csk]
+            [camel-snake-kebab.extras :as cske]
             [cljs-bean.core :as bean]
             [cljs-time.coerce :as tc]
             [cljs-time.core :as t]
@@ -89,6 +91,10 @@
      (gobj/getValueByKeys event "key")))
 
 #?(:cljs
+   (defn echecked? [event]
+     (gobj/getValueByKeys event "target" "checked")))
+
+#?(:cljs
    (defn set-change-value
      "compatible change event for React"
      [node value]
@@ -137,12 +143,17 @@
 ;;   [fmt & args]
 ;;   (apply gstring/format fmt args))
 
-(defn json->clj
-  [json-string]
-  #?(:cljs
-     (-> json-string
-         (js/JSON.parse)
-         (js->clj :keywordize-keys true))))
+#?(:cljs
+   (defn json->clj
+     ([json-string]
+      (json->clj json-string false))
+     ([json-string kebab?]
+      (let [m (-> json-string
+                  (js/JSON.parse)
+                  (js->clj :keywordize-keys true))]
+        (if kebab?
+          (cske/transform-keys csk/->kebab-case-keyword m)
+          m)))))
 
 (defn remove-nils
   "remove pairs of key-value that has nil value from a (possibly nested) map."
@@ -283,6 +294,20 @@
              (parse-int x)
              (catch Exception _
                nil)))))
+#?(:cljs
+   (defn parse-float
+     [x]
+     (if (string? x)
+       (js/parseFloat x)
+       x)))
+
+#?(:cljs
+   (defn safe-parse-float
+     [x]
+     (let [result (parse-float x)]
+       (if (js/isNaN result)
+         nil
+         result))))
 
 #?(:cljs
    (defn debounce
@@ -382,6 +407,15 @@
                          :behavior "smooth"}))))))
 
 #?(:cljs
+   (defn scroll-to-element-v2
+     [elem-id]
+     (when elem-id
+       (when-let [elem (gdom/getElement elem-id)]
+         (.scroll (app-scroll-container-node)
+                  #js {:top (element-top elem 0)
+                       :behavior "auto"})))))
+
+#?(:cljs
    (defn scroll-to
      ([pos]
       (scroll-to (app-scroll-container-node) pos))
@@ -394,11 +428,6 @@
                       :behavior (if animate? "smooth" "auto")})))))
 
 #?(:cljs
-   (defn scroll-to-top
-     []
-     (scroll-to (app-scroll-container-node) 0 false)))
-
-#?(:cljs
    (defn scroll-top
      "Returns the scroll top position of the `node`. If `node` is not specified,
      returns the scroll top position of the `app-scroll-container-node`."
@@ -406,6 +435,18 @@
       (scroll-top (app-scroll-container-node)))
      ([node]
       (when node (.-scrollTop node)))))
+
+#?(:cljs
+   (defn scroll-to-top
+     []
+     (scroll-to (app-scroll-container-node) 0 false)))
+
+#?(:cljs
+   (defn scroll-to-bottom
+     [node]
+     (when-let [node ^js (or node (app-scroll-container-node))]
+       (let [bottom (.-scrollHeight node)]
+         (scroll-to node bottom false)))))
 
 (defn url-encode
   [string]
@@ -730,19 +771,14 @@
 #?(:cljs (def clear-selection! selection/clearSelection))
 
 #?(:cljs
-   (defn copy-to-clipboard! [s]
-     (let [el (js/document.createElement "textarea")]
-       (set! (.-value el) s)
-       (.setAttribute el "readonly" "")
-       (set! (-> el .-style .-position) "absolute")
-       (set! (-> el .-style .-left) "-9999px")
-       (js/document.body.appendChild el)
-       (.select el)
-       (js/document.execCommand "copy")
-       (js/document.body.removeChild el))))
+   (defn copy-to-clipboard!
+     ([s]
+      (utils/writeClipboard s false))
+     ([s html?]
+      (utils/writeClipboard s html?))))
 
 (def uuid-pattern "[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}")
-(defonce exactly-uuid-pattern (re-pattern (str "^" uuid-pattern "$")))
+(defonce exactly-uuid-pattern (re-pattern (str "(?i)^" uuid-pattern "$")))
 (defn uuid-string?
   [s]
   (safe-re-find exactly-uuid-pattern s))
@@ -939,7 +975,7 @@
      (let [user-agent js/navigator.userAgent
            vendor js/navigator.vendor]
        (and (safe-re-find #"Chrome" user-agent)
-            (safe-re-find #"Google Inc" user-agent)))))
+            (safe-re-find #"Google Inc" vendor)))))
 
 #?(:cljs
    (defn indexeddb-check?
@@ -1302,3 +1338,34 @@
    (defn meta-key-name []
      (let [user-agent (.. js/navigator -userAgent)]
        (if mac? "Cmd" "Ctrl"))))
+
+;; TODO: share with electron
+(defn ignored-path?
+  [dir path]
+  (when (string? path)
+    (or
+     (some #(string/starts-with? path (str dir "/" %))
+           ["." ".recycle" "assets" "node_modules"])
+     (some #(string/includes? path (str "/" % "/"))
+           ["." ".recycle" "assets" "node_modules"])
+     ;; hidden directory or file
+     (re-find #"/\.[^.]+" path)
+     (re-find #"^\.[^.]+" path)
+     (let [path (string/lower-case path)]
+       (not
+        (some #(string/ends-with? path %)
+              [".md" ".markdown" ".org" ".edn" ".css"]))))))
+
+(defn wrapped-by-quotes?
+  [v]
+  (and (string? v) (>= (count v) 2) (= "\"" (first v) (last v))))
+
+(defn unquote-string
+  [v]
+  (string/trim (subs v 1 (dec (count v)))))
+
+(defn unquote-string-if-wrapped
+  [v]
+  (if (wrapped-by-quotes? v)
+    (unquote-string v)
+    v))

@@ -37,6 +37,14 @@
                                        :id :label
                                        :placeholder "Label"}]]])
 
+(def zotero-steps [[:editor/input (str slash "zotero")]
+                   [:editor/show-zotero]])
+
+(def *extend-slash-commands (atom []))
+
+(defn register-slash-command [cmd]
+  (swap! *extend-slash-commands conj cmd))
+
 (defn ->marker
   [marker]
   [[:editor/clear-current-slash]
@@ -244,6 +252,8 @@
     ;; advanced
 
     [["Query" [[:editor/input "{{query }}" {:backward-pos 2}]] "Create a DataScript query"]
+     ["Zotero" zotero-steps "Import Zotero journal article"]
+     ["Query table function" [[:editor/input "{{function }}" {:backward-pos 2}]] "Create a query table function"]
      ["Calculator" [[:editor/input "```calc\n\n```" {:backward-pos 4}]
                     [:codemirror/focus]] "Insert a calculator"]
      ["Draw" (fn []
@@ -263,9 +273,14 @@
                                                             :backward-pos 2}]]]
 
      ["Embed Vimeo Video" [[:editor/input "{{vimeo }}" {:last-pattern slash
-                                                        :backward-pos 2}]]]]
+                                                        :backward-pos 2}]]]
 
+     ["Embed Twitter" [[:editor/input "{{tweet }}" {:last-pattern slash
+                                                    :backward-pos 2}]]]]
+
+    @*extend-slash-commands
     ;; Allow user to modify or extend, should specify how to extend.
+
     (state/get-commands)
     (state/get-plugins-commands))
    (remove nil?)
@@ -323,9 +338,9 @@
                      (or backward-pos 0))]
       (state/set-block-content-and-last-pos! id new-value new-pos)
       (cursor/move-cursor-to input
-                           (if (or backward-pos forward-pos)
-                             new-pos
-                             (+ new-pos 1))))))
+                             (if (or backward-pos forward-pos)
+                               new-pos
+                               (+ new-pos 1))))))
 
 (defn simple-insert!
   [id value
@@ -423,8 +438,8 @@
 
 (defmulti handle-step first)
 
-(defmethod handle-step :editor/hook [[_ event {:keys [pid] :as payload}] format]
-  (plugin-handler/hook-plugin-editor event (merge payload {:format format :uuid (:block/uuid (state/get-edit-block))}) pid))
+(defmethod handle-step :editor/hook [[_ event {:keys [pid uuid] :as payload}] format]
+  (plugin-handler/hook-plugin-editor event (merge payload {:format format :uuid (or uuid (:block/uuid (state/get-edit-block)))}) pid))
 
 (defmethod handle-step :editor/input [[_ value option]]
   (when-let [input-id (state/get-edit-input-id)]
@@ -535,6 +550,9 @@
 
 (defmethod handle-step :editor/show-input [[_ option]]
   (state/set-editor-show-input! option))
+
+(defmethod handle-step :editor/show-zotero [[_]]
+  (state/set-editor-show-zotero! true))
 
 (defmethod handle-step :editor/show-date-picker [[_ type]]
   (if (and

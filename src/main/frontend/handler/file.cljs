@@ -254,7 +254,7 @@
   (when-not (string/blank? file)
     (->
      (p/let [_ (or (config/local-db? repo) (git/remove-file repo file))
-             _ (fs/unlink! (config/get-repo-path repo file) nil)]
+             _ (fs/unlink! repo (config/get-repo-path repo file) nil)]
        (when-let [file (db/entity repo [:file/path file])]
          (common-handler/check-changed-files-status)
          (let [file-id (:db/id file)
@@ -300,8 +300,19 @@
       (when-not file-exists?
         (reset-file! repo-url path default-content)))))
 
+(defn create-pages-metadata-file
+  [repo-url]
+  (let [repo-dir (config/get-repo-dir repo-url)
+        path (str config/app-name "/" config/pages-metadata-file)
+        file-path (str "/" path)
+        default-content "{}"]
+    (p/let [_ (fs/mkdir-if-not-exists (str repo-dir "/" config/app-name))
+            file-exists? (fs/create-if-not-exists repo-url repo-dir file-path default-content)]
+      (when-not file-exists?
+        (reset-file! repo-url path default-content)))))
+
 (defn edn-file-set-key-value
-  [path k v ok-handler]
+  [path k v]
   (when-let [repo (state/get-current-repo)]
     (when-let [content (db/get-file-no-sub path)]
       (let [result (try
@@ -312,7 +323,5 @@
                        {}))
             ks (if (vector? k) k [k])
             new-result (rewrite/assoc-in result ks v)]
-        (when ok-handler (ok-handler repo new-result))
-        (state/set-config! repo new-result)
         (let [new-content (str new-result)]
           (set-file-content! repo path new-content))))))

@@ -4,7 +4,6 @@
             [frontend.db-schema :as db-schema]
             [frontend.db.conn :as conn]
             [frontend.db.default :as default-db]
-            [frontend.db.migrate :as migrate]
             [frontend.db.model]
             [frontend.db.query-custom]
             [frontend.db.query-react]
@@ -47,10 +46,10 @@
   get-latest-journals get-matched-blocks get-page get-page-alias get-page-alias-names get-page-blocks get-page-linked-refs-refed-pages
   get-page-blocks-count get-page-blocks-no-cache get-page-file get-page-format get-page-properties
   get-page-referenced-blocks get-page-referenced-pages get-page-unlinked-references get-page-referenced-blocks-no-cache
-  get-pages get-pages-relation get-pages-that-mentioned-page get-public-pages get-tag-pages
+  get-all-pages get-pages get-pages-relation get-pages-that-mentioned-page get-public-pages get-tag-pages
   journal-page? local-native-fs? mark-repo-as-cloned! page-alias-set page-blocks-transform pull-block
-  set-file-last-modified-at! transact-files-db! with-block-refs-count get-modified-pages page-empty? page-empty-or-dummy? get-alias-source-page
-  set-file-content! has-children? get-namespace-pages]
+  set-file-last-modified-at! transact-files-db! get-modified-pages page-empty? page-empty-or-dummy? get-alias-source-page
+  set-file-content! has-children? get-namespace-pages get-all-namespace-relation]
 
  [frontend.db.react
   get-current-marker get-current-page get-current-priority set-key-value
@@ -63,7 +62,8 @@
 
  [frontend.db.query-react
   react-query custom-query-result-transform]
- )
+
+ [frontend.db.default built-in-pages-names built-in-pages])
 
 ;; persisting DBs between page reloads
 (defn persist! [repo]
@@ -134,9 +134,7 @@
 
 (defn restore!
   [{:keys [repos] :as me} old-db-schema restore-config-handler]
-  (let [logged? (:name me)
-        ;; TODO: switch to use the db version
-        old-db? (and old-db-schema (not (:block/name old-db-schema)))]
+  (let [logged? (:name me)]
     (doall
      (for [{:keys [url]} repos]
        (let [repo url]
@@ -147,7 +145,6 @@
                  stored (idb/get-item db-name)
                  _ (if stored
                      (let [stored-db (string->db stored)
-                           stored-db (if old-db? (migrate/migrate url stored-db) stored-db)
                            attached-db (d/db-with stored-db (concat
                                                              [(me-tx stored-db me)]
                                                              default-db/built-in-pages))]
@@ -155,8 +152,7 @@
                      (when logged?
                        (d/transact! db-conn [(me-tx (d/db db-conn) me)])))]
            (restore-config-handler repo)
-           (listen-and-persist! repo)
-           (state/pub-event! [:after-db-restore repo])))))))
+           (listen-and-persist! repo)))))))
 
 (defn run-batch-txs!
   []

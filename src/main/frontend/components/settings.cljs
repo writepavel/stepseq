@@ -13,6 +13,7 @@
             [frontend.handler.ui :as ui-handler]
             [frontend.handler.user :as user-handler]
             [frontend.modules.instrumentation.core :as instrument]
+            [frontend.modules.shortcut.data-helper :as shortcut-helper]
             [frontend.state :as state]
             [frontend.ui :as ui]
             [frontend.util :refer [classnames] :as util]
@@ -170,8 +171,7 @@
                 config-handler/toggle-ui-show-brackets!
                 true)]]
    [:div {:style {:text-align "right"}}
-    ;; TODO: Fetch this shortcut from config.cljs so there's one source of truth
-    (ui/keyboard-shortcut [:meta :c :meta :b])]])
+    (ui/keyboard-shortcut (shortcut-helper/gen-shortcut-seq :ui/toggle-brackets))]])
 
 (defn language-row [t preferred-language]
   [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
@@ -208,7 +208,7 @@
             :class    (classnames [{:active system-theme?}])} [:i.mode-system] [:strong "system"]]]]]
 
    [:div {:style {:text-align "right"}}
-    (ui/keyboard-shortcut [:t :t])]])
+    (ui/keyboard-shortcut (shortcut-helper/gen-shortcut-seq :ui/toggle-theme))]])
 
 (defn file-format-row [t preferred-format]
   [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
@@ -334,6 +334,22 @@
                           (when (= "Enter" (util/ekey e))
                             (update-home-page e)))}]]]])])
 
+(defn enable-all-pages-public-row [t enable-all-pages-public?]
+  (toggle "all pages public"
+          (t :settings-page/enable-all-pages-public)
+          enable-all-pages-public?
+          (fn []
+            (let [value (not enable-all-pages-public?)]
+              (config-handler/set-config! :publishing/all-pages-public? value)))))
+
+;; (defn enable-block-timestamps-row [t enable-block-timestamps?]
+;;   (toggle "block timestamps"
+;;           (t :settings-page/enable-block-time)
+;;           enable-block-timestamps?
+;;           (fn []
+;;             (let [value (not enable-block-timestamps?)]
+;;               (config-handler/set-config! :feature/enable-block-timestamps? value)))))
+
 (defn encryption-row [t enable-encryption?]
   (toggle "enable_encryption"
           (t :settings-page/enable-encryption)
@@ -356,7 +372,23 @@
       :on-click
       (fn []
         (state/close-settings!)
-        (route-handler/redirect! {:to :shortcut})))]]])
+        (route-handler/redirect! {:to :shortcut-setting})))]]])
+
+(defn zotero-settings-row [t]
+  [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
+   [:label.block.text-sm.font-medium.leading-5.opacity-70
+    {:for "zotero_settings"}
+    "Zotero settings"]
+   [:div.mt-1.sm:mt-0.sm:col-span-2
+    [:div
+     (ui/button
+      "Zotero settings"
+      :class "text-sm p-1"
+      :style {:margin-top "0px"}
+      :on-click
+      (fn []
+        (state/close-settings!)
+        (route-handler/redirect! {:to :zotero-setting})))]]])
 
 (defn auto-push-row [t current-repo enable-git-auto-push?]
   (when (string/starts-with? current-repo "https://")
@@ -417,11 +449,12 @@
         current-repo (state/get-current-repo)
         enable-journals? (state/enable-journals? current-repo)
         enable-encryption? (state/enable-encryption? current-repo)
+        enable-all-pages-public? (state/all-pages-public?)
         instrument-disabled? (state/sub :instrument/disabled?)
         logical-outdenting? (state/logical-outdenting?)
         enable-tooltip? (state/enable-tooltip?)
         enable-git-auto-push? (state/enable-git-auto-push? current-repo)
-        enable-block-time? (state/enable-block-time?)
+        ;; enable-block-timestamps? (state/enable-block-timestamps?)
         show-brackets? (state/show-brackets?)
         github-token (state/sub [:me :access-token])
         cors-proxy (state/sub [:me :cors_proxy])
@@ -448,13 +481,16 @@
         (file-format-row t preferred-format)
         (date-format-row t preferred-date-format)
         (workflow-row t preferred-workflow)
+        ;; (enable-block-timestamps-row t enable-block-timestamps?)
         (show-brackets-row t show-brackets?)
         (outdenting-row t logical-outdenting?)
         (tooltip-row t enable-tooltip?)
         (timetracking-row t enable-timetracking?)
         (journal-row t enable-journals?)
+        (enable-all-pages-public-row t enable-all-pages-public?)
         (encryption-row t enable-encryption?)
         (keyboard-shortcuts-row t)
+        (zotero-settings-row t)
         (auto-push-row t current-repo enable-git-auto-push?)]
 
        [:hr] ;; Outside of panel wrap so that it is wider

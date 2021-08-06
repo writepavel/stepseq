@@ -47,6 +47,7 @@
       :search/q ""
       :search/mode :global
       :search/result nil
+      :search/graph-filters []
 
       ;; modals
       :modal/show? false
@@ -82,6 +83,7 @@
       :editor/show-date-picker? false
       ;; With label or other data
       :editor/show-input nil
+      :editor/show-zotero false
       :editor/last-saved-cursor nil
       :editor/editing? nil
       :editor/last-edit-block-input-id nil
@@ -131,6 +133,10 @@
       :plugin/selected-unpacked-pkg nil
       :plugin/active-readme         nil
 
+      ;; pdf
+      :pdf/current                  nil
+      :pdf/ref-highlight            nil
+
       ;; all notification contents as k-v pairs
       :notification/contents {}
       :graph/syncing? false
@@ -138,9 +144,23 @@
       ;; copied blocks
       :copy/blocks {:copy/content nil :copy/block-tree nil}
 
+      :copy/export-block-text-indent-style  (atom "dashes")
+      :copy/export-block-text-remove-options (atom #{})
+
       :date-picker/date nil
 
       :view/components {}})))
+
+
+(defn sub
+  [ks]
+  (if (coll? ks)
+    (util/react (rum/cursor-in state ks))
+    (util/react (rum/cursor state ks))))
+
+(defn sub-current-route
+  []
+  (get-in (sub :route-match) [:data :name]))
 
 (defn get-route-match
   []
@@ -163,12 +183,6 @@
 (defn route-has-p?
   []
   (get-in (get-route-match) [:query-params :p]))
-
-(defn sub
-  [ks]
-  (if (coll? ks)
-    (util/react (rum/cursor-in state ks))
-    (util/react (rum/cursor state ks))))
 
 (defn set-state!
   [path value]
@@ -209,9 +223,17 @@
   []
   (:custom-css-url (get-config)))
 
+(defn get-default-journal-template
+  []
+  (when-let [template (get-in (get-config) [:default-templates :journals])]
+    (when-not (string/blank? template)
+      (string/trim template))))
+
 (defn all-pages-public?
   []
-  (true? (:all-pages-public? (get-config))))
+  (let [value (:publishing/all-pages-public? (get-config))
+        value (if (some? value) value (:all-pages-public? (get-config)))]
+    (true? value)))
 
 (defn enable-grammarly?
   []
@@ -252,13 +274,14 @@
   (not (false? (:git-auto-push
                 (get (sub-config) repo)))))
 
-(defn enable-block-time?
+(defn enable-block-timestamps?
   []
-  ;; (true? (:feature/enable-block-time?
-  ;;         (get (sub-config) (get-current-repo))))
+  (true? (:feature/enable-block-timestamps?
+          (get (sub-config) (get-current-repo)))))
 
-  ;; Disable block timestamps for now, because it doesn't work with undo/redo
-  false)
+(defn sub-graph-config
+  []
+  (:graph/settings (get (sub-config) (get-current-repo))))
 
 ;; Enable by default
 (defn show-brackets?
@@ -531,6 +554,16 @@
   []
   (get @state :editor/show-input))
 
+
+(defn set-editor-show-zotero!
+  [value]
+  (set-state! :editor/show-zotero value))
+
+(defn get-editor-show-zotero
+  []
+  (get @state :editor/show-zotero))
+
+
 (defn set-edit-input-id!
   [input-id]
   (swap! state update :editor/editing?
@@ -539,7 +572,8 @@
 
 (defn get-edit-pos
   []
-  (.-selectionStart (get-input)))
+  (when-let [input (get-input)]
+    (.-selectionStart input)))
 
 (defn set-selection-start-block!
   [start-block]
@@ -592,12 +626,13 @@
   (dom/add-class! block "selected noselect")
   (swap! state assoc
          :selection/mode true
-         :selection/blocks (conj (:selection/blocks @state) block)
+         :selection/blocks (conj (vec (:selection/blocks @state)) block)
          :selection/direction direction))
 
 (defn drop-last-selection-block!
   []
-  (let [last-block (peek (:selection/blocks @state))]
+  (def blocks (:selection/blocks @state))
+  (let [last-block (peek (vec (:selection/blocks @state)))]
     (swap! state assoc
            :selection/mode true
            :selection/blocks (vec (pop (:selection/blocks @state))))
@@ -728,11 +763,20 @@
        :container (gobj/get container "id")
        :pos (cursor/pos (gdom/getElement edit-input-id))})))
 
+(defonce publishing? (atom nil))
+
+(defn publishing-enable-editing?
+  []
+  (and @publishing? (:publishing/enable-editing? (get-config))))
+
 (defn set-editing!
   ([edit-input-id content block cursor-range]
    (set-editing! edit-input-id content block cursor-range true))
   ([edit-input-id content block cursor-range move-cursor?]
-   (when (and edit-input-id block)
+   (when (and edit-input-id block
+              (or
+               (publishing-enable-editing?)
+               (not @publishing?)))
      (let [block-element (gdom/getElement (string/replace edit-input-id "edit-block" "ls-block"))
            container (util/get-block-container block-element)
            block (if container
@@ -1232,6 +1276,24 @@
   []
   (set-search-result! nil))
 
+(defn add-graph-search-filter!
+  [q]
+  (when-not (string/blank? q)
+    (update-state! :search/graph-filters
+                   (fn [value]
+                     (vec (distinct (conj value q)))))))
+
+(defn remove-search-filter!
+  [q]
+  (when-not (string/blank? q)
+    (update-state! :search/graph-filters
+                   (fn [value]
+                     (remove #{q} value)))))
+
+(defn clear-search-filters!
+  []
+  (set-state! :search/graph-filters []))
+
 (defn get-search-mode
   []
   (:search/mode @state))
@@ -1297,6 +1359,13 @@
   [content ids]
   (set-state! :copy/blocks {:copy/content content :copy/block-tree ids}))
 
+(defn get-export-block-text-indent-style []
+  (:copy/export-block-text-indent-style @state))
+
+(defn get-export-block-text-remove-options []
+  (:copy/export-block-text-remove-options @state))
+
+
 (defn set-editor-args!
   [args]
   (set-state! :editor/args args))
@@ -1359,3 +1428,9 @@
 (defn get-favorites-name
   []
   (or (:name/favorites (get-config)) "Favorites"))
+
+(defn add-watch-state [key f]
+  (add-watch state key f))
+
+(defn remove-watch-state [key]
+  (remove-watch state key))

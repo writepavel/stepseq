@@ -1,14 +1,15 @@
 (ns frontend.date
-  (:require [cljs-time.core :as t]
+  (:require ["chrono-node" :as chrono]
+            [cljs-bean.core :as bean]
             [cljs-time.coerce :as tc]
+            [cljs-time.core :as t]
             [cljs-time.format :as tf]
             [cljs-time.local :as tl]
-            [frontend.state :as state]
-            [cljs-bean.core :as bean]
-            [frontend.util :as util]
             [clojure.string :as string]
+            [frontend.state :as state]
+            [frontend.util :as util]
             [goog.object :as gobj]
-            ["chrono-node" :as chrono]))
+            [lambdaisland.glogi :as log]))
 
 (defn nld-parse
   [s]
@@ -25,14 +26,24 @@
 (defn journal-title-formatters
   []
   (conj
-   #{"MMM do, yyyy"
+   #{"do MMM yyyy"
+     "do MMMM yyyy"
+     "MMM do, yyyy"
      "MMMM do, yyyy"
+     "E, dd-MM-yyyy"
+     "E, dd.MM.yyyy"
      "E, MM/dd/yyyy"
      "E, yyyy/MM/dd"
+     "EEE, dd-MM-yyyy"
+     "EEE, dd.MM.yyyy"
      "EEE, MM/dd/yyyy"
      "EEE, yyyy/MM/dd"
+     "EEEE, dd-MM-yyyy"
+     "EEEE, dd.MM.yyyy"
      "EEEE, MM/dd/yyyy"
      "EEEE, yyyy/MM/dd"
+     "dd-MM-yyyy"
+     "dd.MM.yyyy"
      "MM/dd/yyyy"
      "MM-dd-yyyy"
      "MM_dd_yyyy"
@@ -43,6 +54,10 @@
      "yyyyMMdd"
      "yyyy年MM月dd日"}
    (state/get-date-formatter)))
+
+;; (tf/parse (tf/formatter "dd.MM.yyyy") "2021Q4") => 20040120T000000
+(def safe-journal-title-formatters
+  (set ["yyyy-MM-dd" "yyyy_MM_dd" (state/get-date-formatter)]))
 
 (defn get-date-time-string
   ([]
@@ -99,6 +114,14 @@
    (journal-name (tl/local-now)))
   ([date]
    (format date)))
+
+(defn journal-name-s [s]
+  (try
+    (journal-name (tf/parse (tf/formatter "yyyy-MM-dd") s))
+    (catch js/Error e
+      (log/info :parse-journal-date {:message  "Unable to parse date to journal name, skipping."
+                                     :date-str s})
+      nil)))
 
 (defn today
   []
@@ -167,18 +190,20 @@
        (valid? (util/capitalize-all title))))
 
 (defn journal-title->
-  [journal-title then-fn]
-  (when-not (string/blank? journal-title)
-    (when-let [time (->> (map
-                          (fn [formatter]
-                            (try
-                              (tf/parse (tf/formatter formatter) (util/capitalize-all journal-title))
-                              (catch js/Error _e
-                                nil)))
-                          (journal-title-formatters))
-                         (filter some?)
-                         first)]
-      (then-fn time))))
+  ([journal-title then-fn]
+   (journal-title-> journal-title then-fn (journal-title-formatters)))
+  ([journal-title then-fn formatters]
+   (when-not (string/blank? journal-title)
+     (when-let [time (->> (map
+                            (fn [formatter]
+                              (try
+                                (tf/parse (tf/formatter formatter) (util/capitalize-all journal-title))
+                                (catch js/Error _e
+                                  nil)))
+                            formatters)
+                          (filter some?)
+                          first)]
+       (then-fn time)))))
 
 (defn journal-title->int
   [journal-title]
@@ -190,6 +215,12 @@
   [day]
   (when day
     (format (tf/parse (tf/formatter "yyyyMMdd") (str day)))))
+
+(defn journal-day->ts
+  [day]
+  (when day
+    (-> (tf/parse (tf/formatter "yyyyMMdd") (str day))
+        (tc/to-long))))
 
 (defn journal-title->long
   [journal-title]
@@ -211,6 +242,12 @@
 (defn int->local-time
   [n]
   (get-date-time-string (t/to-default-time-zone (tc/from-long n))))
+
+(defn int->local-time-2
+  [n]
+  (tf/unparse
+   (tf/formatter "yyyy-MM-dd HH:mm")
+   (t/to-default-time-zone (tc/from-long n))))
 
 (comment
   (def default-formatter (tf/formatter "MMM do, yyyy"))

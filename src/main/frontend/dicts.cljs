@@ -178,6 +178,9 @@
         :file/last-modified-at "Last modified at"
         :file/no-data "No data"
         :file/format-not-supported "Format .{1} is not supported."
+        :page/created-at "Created At"
+        :page/updated-at "Updated At"
+        :page/backlinks "Back Links"
         :editor/block-search "Search for a block"
         :editor/image-uploading "Uploading"
         :draw/invalid-file "Could not load this invalid excalidraw file"
@@ -213,6 +216,7 @@
         :settings-page/enable-timetracking "Enable timetracking"
         :settings-page/enable-tooltip "Enable tooltips"
         :settings-page/enable-journals "Enable journals"
+        :settings-page/enable-all-pages-public "Enable all pages public when publishing"
         :settings-page/enable-encryption "Enable encryption feature"
         :settings-page/customize-shortcuts "Keyboard shortcuts"
         :settings-page/shortcut-settings "Customize shortcuts"
@@ -236,17 +240,20 @@
         :submit "Submit"
         :cancel "Cancel"
         :close "Close"
+        :delete "Delete"
         :re-index "Re-index"
         :unlink "unlink"
         :search (if config/publishing?
                   "Search"
                   "Search or Create Page")
         :page-search "Search in the current page"
+        :graph-search "Search graph"
         :new-page "New page"
         :new-file "New file"
         :new-graph "Add new graph"
         :graph "Graph"
         :graph-view "View Graph"
+        :cards-view "View Cards"
         :publishing "Publishing"
         :export "Export"
         :export-markdown "Export as standard Markdown (no block properties)"
@@ -277,7 +284,7 @@
         :parsing-files "Parsing files"
         :loading-files "Loading files"
         :login-github "Login with Github"
-        :login-google "Login with Google"
+        ;; :login-google "Login with Google"
         :login "Login"
         :go-to "Go to "
         :or "or"
@@ -293,7 +300,10 @@
         :user/delete-your-account "Delete your account"
         :user/delete-account-notice "All your published pages on logseq.com will be deleted."
 
-        :help/shortcut-page-title "Keyboard shortcuts"}
+        :help/shortcut-page-title "Keyboard shortcuts"
+
+        :pdf/copy-ref "Copy ref"
+        :pdf/copy-text "Copy text"}
 
    :de {:help/about "Über Logseq"
         :help/bug "Fehlerbericht"
@@ -910,6 +920,7 @@
                      "搜索"
                      "搜索或者创建新页面")
            :page-search "在当前页面搜索"
+           :graph-search "搜索图谱"
            :new-page "新页面"
            :new-file "新文件"
            :graph "图谱"
@@ -932,6 +943,8 @@
            :help-shortcut-title "点此查看快捷方式和更多有用帮助"
            :loading "加载中"
            :cloning "Clone 中"
+           :close "关闭"
+           :delete "删除"
            :parsing-files "正在解析文件"
            :loading-files "正在加载文件"
            :login-github "用 Github 登录"
@@ -949,7 +962,10 @@
            :open-a-directory "打开本地文件夹"
            :user/delete-account "删除帐号"
            :user/delete-your-account "删除你的帐号"
-           :user/delete-account-notice "你在 logseq.com 发布的页面（假如有的话）也会被删除。"}
+           :user/delete-account-notice "你在 logseq.com 发布的页面（假如有的话）也会被删除。"
+
+           :pdf/copy-ref "复制引用"
+           :pdf/copy-text "复制文本"}
 
 
    :zh-Hant {:on-boarding/title "你好，歡迎使用 Logseq！"
@@ -1029,6 +1045,8 @@
              :highlight "高亮"
              :strikethrough "刪除線"
              :code "代碼"
+             :close "關閉"
+             :delete "删除"
              :right-side-bar/help "幫助"
              :right-side-bar/switch-theme "主題模式"
              :right-side-bar/theme "{1}主題"
@@ -1178,7 +1196,10 @@
              :language "語言"
              :white "亮色"
              :dark "暗黑"
-             :remove-background "去除背景"}
+             :remove-background "去除背景"
+
+             :pdf/copy-ref "復製引用"
+             :pdf/copy-text "復製文本"}
 
    :af {:on-boarding/title "Hi, welcome to Logseq!"
         :on-boarding/sharing "meedeling"

@@ -51,7 +51,6 @@
 ;; FIXME: should support multiple images concurrently uploading
 
 
-(defonce *asset-pending-file (atom nil))
 (defonce *asset-uploading? (atom false))
 (defonce *asset-uploading-process (atom 0))
 (defonce *selected-text (atom nil))
@@ -1521,9 +1520,6 @@
               (reset! *asset-uploading? false)
               (reset! *asset-uploading-process process)))))))))
 
-(defn set-asset-pending-file [file]
-  (reset! *asset-pending-file file))
-
 ;; Editor should track some useful information, like editor modes.
 ;; For example:
 ;; 1. Which file format is it, markdown or org mode?
@@ -1903,6 +1899,7 @@
                        (util/format "((%s))" uuid-string)
                        format
                        {:last-pattern (str "((" (if @*selected-text "" q))
+                        :end-pattern "))"
                         :postfix-fn   (fn [s] (util/replace-first "))" s ""))})
 
       ;; Save it so it'll be parsed correctly in the future
@@ -2788,9 +2785,9 @@
                    items (or (.-items clipboard-data)
                              (.-files clipboard-data))
                    picked (pick-one-allowed-item items)]
-               (if (get picked 1)
-                 (match picked
-                   [:asset file] (set-asset-pending-file file))))]
+               (when-let [file (second picked)]
+                 (when-let [block (state/get-edit-block)]
+                   (upload-asset id #js[file] (:block/format block) *asset-uploading? true))))]
       (util/stop e)
       (paste-text (.getData (gobj/get e "clipboardData") "text") e))))
 

@@ -25,6 +25,7 @@
             [frontend.extensions.latex :as latex]
             [frontend.extensions.sci :as sci]
             [frontend.extensions.pdf.assets :as pdf-assets]
+            [frontend.extensions.zotero :as zotero]
             [frontend.format.block :as block]
             [frontend.format.mldoc :as mldoc]
             [frontend.handler.block :as block-handler]
@@ -423,7 +424,8 @@
 (rum/defc page-cp
   [{:keys [html-export? label children contents-page? sidebar? preview?] :as config} page]
   (when-let [page-name (:block/name page)]
-    (let [page-name (string/lower-case page-name)
+    (let [page-name (-> (string/lower-case page-name)
+                        (util/remove-boundary-slashes))
           page-entity (db/entity [:block/name page-name])
           redirect-page-name (model/get-redirect-page-name page-name (:block/alias? config))
           href (if html-export?
@@ -437,25 +439,32 @@
         inner))))
 
 (rum/defc asset-reference
-  [title path]
+  [config title path]
   (let [repo-path (config/get-repo-dir (state/get-current-repo))
-        full-path (.. util/node-path (join repo-path (config/get-local-asset-absolute-path path)))
+        full-path (if (util/absolute-path? path)
+                    path
+                    (.. util/node-path (join repo-path (config/get-local-asset-absolute-path path))))
         ext-name (util/get-file-ext full-path)
-        ext-name (and ext-name (string/lower-case ext-name))]
-
+        title-or-path (cond
+                        (string? title)
+                        title
+                        (seq title)
+                        (->elem :span (map-inline config title))
+                        :else
+                        path)]
     [:div.asset-ref-wrap
      {:data-ext ext-name}
 
-     (if (and (= "pdf" ext-name)
-              (string/ends-with? (util/node-path.dirname full-path) config/local-assets-dir))
+     (if (= "pdf" ext-name)
        [:a.asset-ref.is-pdf
         {:href "javascript:void(0);"
-         :on-click (fn [e]
-                     (when-let [current (pdf-assets/inflate-asset (util/node-path.basename full-path))]
-                       (state/set-state! :pdf/current current)
-                       (.preventDefault e)))}
-        (or title path)]
-       [:a.asset-ref {:target "_blank" :href full-path} (or title path)])
+         :on-mouse-down (fn [e]
+                          (when-let [current (pdf-assets/inflate-asset full-path)]
+                            (util/stop e)
+                            (state/set-state! :pdf/current current)))}
+        title-or-path]
+       [:a.asset-ref {:target "_blank" :href full-path}
+        title-or-path])
 
      (case ext-name
        ;; https://en.wikipedia.org/wiki/HTML5_video
@@ -592,13 +601,15 @@
       (if block
         [:div.block-ref-wrap.inline
 
-         {:data-type (name (or block-type :default))
+         {:data-type    (name (or block-type :default))
           :data-hl-type hl-type
           :on-mouse-down
-          (fn [e]
-            (util/stop e)
+          (fn [^js/MouseEvent e]
+            (when (or (gobj/get e "shiftKey")
+                      (not (.. e -target (closest ".blank"))))
+              (util/stop e)
 
-            (if (gobj/get e "shiftKey")
+              (if (gobj/get e "shiftKey")
                 (state/sidebar-add-block!
                   (state/get-current-repo)
                   (:db/id block)
@@ -606,12 +617,12 @@
                   {:block block})
 
                 (match [block-type (util/electron?)]
-                  ;; pdf annotation
-                  [:annotation true] (pdf-assets/open-block-ref! block)
+                       ;; pdf annotation
+                       [:annotation true] (pdf-assets/open-block-ref! block)
 
-                  ;; default open block page
-                  :else (route-handler/redirect! {:to          :page
-                                                  :path-params {:name id}}))))}
+                       ;; default open block page
+                       :else (route-handler/redirect! {:to          :page
+                                                       :path-params {:name id}})))))}
 
          (let [title (let [title (:block/title block)
                            block-content (block-content (assoc config :block-ref? true)
@@ -811,7 +822,7 @@
           (if (and (= format :org)
                    (show-link? config nil page page)
                    (not (contains? #{"pdf" "mp4" "ogg" "webm"} (util/get-file-ext page))))
-            (image-link config url page nil nil page)
+            (image-link config url page nil metadata full_text)
             (let [label* (if (seq (mldoc/plain->text label)) label nil)]
               (if (and (string? page) (string/blank? page))
                 [:span (util/format "[[%s]]" page)]
@@ -843,12 +854,18 @@
 
           (and (util/electron?)
                (show-link? config metadata s full_text))
-          (asset-reference (second (first label)) s)
+          (asset-reference config label s)
 
-          ;; open file externally if s is "../assets/<...>"
-          (and (util/electron?)
-               (config/local-asset? s))
-          (let [path (relative-assets-path->absolute-path s)]
+          (util/electron?)
+          (let [path (cond
+                       (string/starts-with? s "file://")
+                       (string/replace s "file://" "")
+
+                       (string/starts-with? s "/")
+                       s
+
+                       :else
+                       (relative-assets-path->absolute-path s))]
             (->elem
              :a
              (cond->
@@ -883,8 +900,16 @@
                 (block-reference config (:link (second url)) label)))
 
             (= protocol "file")
-            (if (show-link? config metadata href full_text)
+            (cond
+              (and (show-link? config metadata href full_text)
+                   (not (contains? #{"pdf" "mp4" "ogg" "webm" "mov"} (util/get-file-ext href))))
               (image-link config url href label metadata full_text)
+
+              (and (util/electron?)
+                   (show-link? config metadata href full_text))
+              (asset-reference config label href)
+
+              :else
               (let [label-text (get-label-text label)
                     page (if (string/blank? label-text)
                            {:block/name (db/get-file-page (string/replace href "file:" ""))}
@@ -912,8 +937,27 @@
                      (map-inline config label))))))
 
             ;; image
-            (show-link? config metadata href full_text)
+            (and (show-link? config metadata href full_text)
+                 (not (contains? #{"pdf"} (util/get-file-ext href))))
             (image-link config url href label metadata full_text)
+
+            ;; pdf link
+            (and
+             (util/electron?)
+             (= (util/get-file-ext href) "pdf")
+             (show-link? config metadata href full_text))
+            [:a.asset-ref.is-pdf
+             {:href "javascript:void(0);"
+              :on-mouse-down (fn [e]
+                               (when-let [current (pdf-assets/inflate-asset href)]
+                                 (state/set-state! :pdf/current current)))}
+             (get-label-text label)]
+
+            (and
+             (util/electron?)
+             (= protocol "zotero")
+             (= (-> label get-label-text util/get-file-ext) "pdf"))
+            (zotero/zotero-pdf-link (get-label-text label) href)
 
             :else
             (->elem
@@ -1514,7 +1558,9 @@
                             :annotation (pdf-assets/open-block-ref! t)
                             (.preventDefault %))}
 
-              [:span.hl-page (str "P" (or (:hl-page properties) "?"))]
+              [:span.hl-page
+               [:strong.forbid-edit (str "P" (or (:hl-page properties) "?"))]
+               [:label.blank " "]]
 
               (when-let [st (and (= :area (keyword (:hl-type properties)))
                                  (:hl-stamp properties))]
@@ -1636,6 +1682,7 @@
         button (gobj/get e "buttons")]
     (when (contains? #{1 0} button)
       (when-not (or
+                 (d/has-class? target "forbid-edit")
                  (d/has-class? target "bullet")
                  (util/link? target)
                  (util/input? target)

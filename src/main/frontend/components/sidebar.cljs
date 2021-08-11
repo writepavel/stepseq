@@ -147,7 +147,9 @@
   []
   (when-let [default-home (state/get-default-home)]
     (let [page (:page default-home)
-          page (when page (db/entity [:block/name (string/lower-case page)]))]
+          page (when (and (string? page)
+                          (not (string/blank? page)))
+                 (db/entity [:block/name (string/lower-case page)]))]
       (if page
         default-home
         (dissoc default-home :page)))))
@@ -163,14 +165,13 @@
                                           sidebar (:sidebar default-home)
                                           sidebar (if (string? sidebar) [sidebar] sidebar)]
                                       (when-let [pages (->> (seq sidebar)
-                                                            (remove nil?))]
-                                        (let [blocks (remove nil? pages)]
-                                          (doseq [page pages]
-                                            (let [page (string/lower-case page)
-                                                  [db-id block-type] (if (= page "contents")
-                                                                       ["contents" :contents]
-                                                                       [page :page])]
-                                              (state/sidebar-add-block! current-repo db-id block-type nil))))
+                                                            (remove string/blank?))]
+                                        (doseq [page pages]
+                                          (let [page (string/lower-case page)
+                                                [db-id block-type] (if (= page "contents")
+                                                                     ["contents" :contents]
+                                                                     [page :page])]
+                                            (state/sidebar-add-block! current-repo db-id block-type nil)))
                                         (reset! sidebar-inited? true))))
                                   state)}
   []
@@ -280,16 +281,21 @@
       (state/set-modal! nil))
     nil))
 
+(defn- hide-context-menu-and-clear-selection
+  []
+  (state/hide-custom-context-menu!)
+  (editor-handler/clear-selection!))
+
 (rum/defcs sidebar <
   (mixins/modal :modal/show?)
   rum/reactive
   (mixins/event-mixin
    (fn [state]
-     (mixins/listen state js/window "click"
+     (mixins/listen state js/window "click" hide-context-menu-and-clear-selection)
+     (mixins/listen state js/window "keydown"
                     (fn [e]
-                      ;; hide context menu
-                      (state/hide-custom-context-menu!)
-                      (editor-handler/clear-selection!)))))
+                      (when (= 27 (.-keyCode e))
+                        (hide-context-menu-and-clear-selection))))))
   [state route-match main-content]
   (let [{:keys [open? close-fn open-fn]} state
         close-fn (fn []

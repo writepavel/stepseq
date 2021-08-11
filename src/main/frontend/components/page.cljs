@@ -103,9 +103,24 @@
     [:div.flex.flex-row.items-center.mr-2.ml-1 {:style {:height 24}}
      [:span.bullet-container.cursor
       [:span.bullet]]]
-    [:div.flex.flex-1 {:on-click #(editor-handler/insert-first-page-block-if-not-exists! page-name)}
+    [:div.flex.flex-1 {:on-click (fn []
+                                   (let [block (editor-handler/insert-first-page-block-if-not-exists! page-name)]
+                                     (js/setTimeout #(editor-handler/edit-block! block :max nil (:block/uuid block)) 100)))}
      [:span.opacity-50
       "Click here to edit..."]]]])
+
+(rum/defc add-button < rum/reactive
+  [page-name]
+  [:div.ls-block.flex-1.flex-col.rounded-sm {:style {:width "100%"}}
+   [:div.flex.flex-row
+    [:div {:style {:height 24
+                   :margin-left 2}}
+     (when-not (state/sub [:editor/block])
+       [:a.add-button-link
+        {:on-click (fn []
+                     (when-let [block (editor-handler/api-insert-new-block! "" {:page page-name})]
+                       (js/setTimeout #(editor-handler/edit-block! block :max nil (:block/uuid block)) 100)))}
+        svg/plus-circle])]]])
 
 (rum/defc page-blocks-cp < rum/reactive
   db-mixins/query
@@ -135,7 +150,11 @@
                              config)
               hiccup-config (common-handler/config-with-document-mode hiccup-config)
               hiccup (block/->hiccup page-blocks hiccup-config {})]
-          (page-blocks-inner page-name page-blocks hiccup sidebar? preview?))))))
+          [:div
+           (page-blocks-inner page-name page-blocks hiccup sidebar? preview?)
+           (when (and (not block?)
+                      (not config/publishing?))
+             (add-button page-name))])))))
 
 (defn contents-page
   [page]
@@ -382,15 +401,17 @@
                                                  :page
                                                  {:page page}))))}
                  [:h1.title {:style {:margin-left -2}}
-                  (if page-original-name
-                    (if (and (string/includes? page-original-name "[[")
-                             (string/includes? page-original-name "]]"))
-                      (let [ast (mldoc/->edn page-original-name (mldoc/default-config format))]
-                        (block/markup-element-cp {} (ffirst ast)))
-                      page-original-name)
-                    (or
-                     page-name
-                     path-page-name))]]]
+                  (let [title (if page-original-name
+                                (if (and (string/includes? page-original-name "[[")
+                                         (string/includes? page-original-name "]]"))
+                                  (let [ast (mldoc/->edn page-original-name (mldoc/default-config format))]
+                                    (block/markup-element-cp {} (ffirst ast)))
+                                  page-original-name)
+                                (or
+                                  page-name
+                                  path-page-name))]
+                    (if (pdf-assets/hls-file? title)
+                      (pdf-assets/human-hls-filename-display title) title))]]]
                (when (not config/publishing?)
                  [:div.flex.flex-row
                   (when plugin-handler/lsp-enabled?
@@ -431,7 +452,9 @@
 
            (when-not block?
              [:div
-              (when (text/namespace-page? route-page-name)
+              (when (and
+                     (not journal?)
+                     (text/namespace-page? route-page-name))
                 (hierarchy/structures route-page-name))
 
               ;; TODO: or we can lazy load them

@@ -44,15 +44,11 @@ Please go to https://discuss.logseq.com/c/feature-requests/7.
 
 ## How can I use it?
 
-1. Make sure you have registered a [GitHub account](https://github.com/join) and already created a repository (could be an old one). _Currently we only support GitHub, but more sync options (e.g. Gitlab, Dropbox, Google Drive, WebDAV, etc.) will be added soon._
+1. Download the desktop app at https://github.com/logseq/logseq/releases.
+2. Start writing and have fun!
 
-2. Visit our website <https://logseq.com/>.
-
-3. Click the "Login with GitHub" button in the upper-right corner.
-
-4. Following the on-screen instructions, install Logseq app on your selected repository.
-
-5. Start writing and have fun!
+## FAQ
+Please go to https://logseq.github.io/#/page/faq.
 
 ## Credits
 

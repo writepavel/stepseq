@@ -157,16 +157,15 @@
            (p/then (fn [result]
                      (let [files (map #(dissoc % :file/file) result)]
                        (repo-handler/start-repo-db-if-not-exists! repo {:db-type :local-native-fs})
-                       (repo-handler/load-repo-to-db! repo
-                                                      {:first-clone? true
-                                                       :nfs-files    files})
-
-                       (state/add-repo! {:url repo :nfs? true})
-                       (state/set-loading-files! false)
-                       (and ok-handler (ok-handler))
-                       (when (util/electron?)
-                         (fs/watch-dir! dir-name))
-                       (state/pub-event! [:graph/added repo]))))
+                       (p/let [_ (repo-handler/load-repo-to-db! repo
+                                                                {:first-clone? true
+                                                                 :nfs-files    files})]
+                         (state/add-repo! {:url repo :nfs? true})
+                         (state/set-loading-files! false)
+                         (and ok-handler (ok-handler))
+                         (when (util/electron?)
+                           (fs/watch-dir! dir-name))
+                         (state/pub-event! [:graph/added repo])))))
            (p/catch (fn [error]
                       (log/error :nfs/load-files-error repo)
                       (log/error :exception error)))))
@@ -177,7 +176,7 @@
 
 (defn- compute-diffs
   [old-files new-files]
-  (let [ks [:file/path :file/last-modified-at]
+  (let [ks [:file/path :file/last-modified-at :file/content]
         ->set (fn [files ks]
                 (when (seq files)
                   (->> files
@@ -191,7 +190,11 @@
         new-file-paths (file-path-set-f new-files)
         added (set/difference new-file-paths old-file-paths)
         deleted (set/difference old-file-paths new-file-paths)
-        modified (set/difference new-file-paths added)]
+        modified (->> (set/intersection new-file-paths old-file-paths)
+                      (filter (fn [path]
+                                (not= (:file/content (get-file-f old-files path))
+                                      (:file/content (get-file-f new-files path)))))
+                      (set))]
     {:added    added
      :modified modified
      :deleted  deleted}))
@@ -230,15 +233,10 @@
                           (assoc file :file/content content)))) added-or-modified))
         (p/then (fn [result]
                   (let [files (map #(dissoc % :file/file :file/handle) result)
-                        non-modified? (fn [file]
-                                        (let [content (:file/content file)
-                                              old-content (:file/content (get-file-f (:file/path file) old-files))]
-                                          (= content old-content)))
-                        non-modified-files (->> (filter non-modified? files)
-                                                (map :file/path))
                         [modified-files modified] (if re-index?
                                                     [files (set modified)]
-                                                    [(remove non-modified? files) (set/difference (set modified) (set non-modified-files))])
+                                                    (let [modified-files (filter (fn [file] (contains? added-or-modified (:file/path file))) files)]
+                                                      [modified-files (set modified)]))
                         diffs (concat
                                (rename-f "remove" deleted)
                                (rename-f "add" added)
@@ -248,7 +246,9 @@
                       (repo-handler/load-repo-to-db! repo
                                                      {:diffs     diffs
                                                       :nfs-files modified-files
-                                                      :refresh? (not re-index?)}))))))))
+                                                      :refresh? (not re-index?)}))
+                    (when (and (util/electron?) (not re-index?))
+                      (db/transact! repo new-files))))))))
 
 (defn- reload-dir!
   ([repo]
@@ -261,7 +261,8 @@
            path-handles (atom {})
            electron? (util/electron?)
            nfs? (not electron?)]
-       (state/set-graph-syncing? true)
+       (when re-index?
+         (state/set-graph-syncing? true))
        (->
         (p/let [handle (idb/get-item handle-path)]
           (when (or handle electron?)   ; electron doesn't store the file handle

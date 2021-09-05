@@ -30,11 +30,13 @@
           (when (not-empty md-items)
             (when-let [id (:block/uuid
                            (editor-handler/api-insert-new-block!
-                            first-block {:page page-name}))]
+                            first-block {:page page-name
+                                         :re-render-root? false}))]
               (doseq [md-item md-items]
                 (editor-handler/api-insert-new-block!
                  md-item
                  {:block-uuid id
+                  :re-render-root? false
                   :sibling?   false
                   :before?    false})))))))))
 
@@ -47,10 +49,20 @@
   [page-name abstract-note]
   (when-not (str/blank? abstract-note)
     (let [block (editor-handler/api-insert-new-block!
-                 "[[Abstract]]" {:page page-name})]
+                 "[[Abstract]]" {:page page-name
+                                 :re-render-root? false})]
       (editor-handler/api-insert-new-block!
        abstract-note {:block-uuid (:block/uuid block)
+                      :re-render-root? false
                       :sibling? false}))))
+
+(defn- create-page [page-name properties]
+  (page-handler/create!
+   page-name
+   {:redirect? false
+    :format :markdown
+    :create-first-block? false
+    :properties properties}))
 
 (defn create-zotero-page
   ([item]
@@ -59,30 +71,29 @@
           :or {insert-command? true notification? true}
           :as opt}]
    (go
-     (let [{:keys [page-name properties]} (extractor/extract item)
-           abstract-note (get properties :abstract-note)
-           properties (dissoc properties :abstract-note)]
-       (when insert-command?
-         (handle-command-zotero block-dom-id page-name)
-         (editor-handler/save-current-block!))
+     (let [{:keys [page-name properties abstract-note]} (extractor/extract item)]
 
        (if (page-handler/page-exists? (str/lower-case page-name))
-         (editor-handler/api-insert-new-block!
-          ""
-          {:page       page-name
-           :properties properties})
-         (page-handler/create!
-          page-name
-          {:redirect? false
-           :format :markdown
-           :create-first-block? false
-           :properties properties}))
+         (if (setting/setting :overwrite-mode?)
+           (page-handler/delete!
+            page-name
+            (fn [] (create-page page-name properties)))
+           (editor-handler/api-insert-new-block!
+            ""
+            {:page       page-name
+             :properties properties
+             :re-render-root? false}))
+         (create-page page-name properties))
 
        (create-abstract-note! page-name abstract-note)
 
        (<! (add page-name :attachments item))
 
        (<! (add page-name :notes item))
+
+       (when insert-command?
+         (handle-command-zotero block-dom-id page-name)
+         (editor-handler/save-current-block!))
 
        (when notification?
          (notification/show! (str "Successfully added zotero item to page " page-name) :success))))))

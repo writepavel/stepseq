@@ -10,12 +10,14 @@
             [lambdaisland.glogi :as log]
             [medley.core :as medley]
             ["mldoc" :as mldoc :refer [Mldoc]]
-            [linked.core :as linked]))
+            [linked.core :as linked]
+            [promesa.core :as p]
+            [frontend.util.pool :as pool]))
 
 (defonce parseJson (gobj/get Mldoc "parseJson"))
 (defonce parseInlineJson (gobj/get Mldoc "parseInlineJson"))
 (defonce parseOPML (gobj/get Mldoc "parseOPML"))
-(defonce exportToHtml (gobj/get Mldoc "exportToHtml"))
+(defonce export (gobj/get Mldoc "export"))
 (defonce anchorLink (gobj/get Mldoc "anchorLink"))
 (defonce parseAndExportMarkdown (gobj/get Mldoc "parseAndExportMarkdown"))
 (defonce parseAndExportOPML (gobj/get Mldoc "parseAndExportOPML"))
@@ -150,7 +152,7 @@
                       properties-ast
                       (map (fn [[k v]]
                              (let [k (keyword (string/lower-case k))
-                                   v (if (contains? #{:title :description :filters :roam_tags} k)
+                                   v (if (contains? #{:title :description :filters :roam_tags :macro} k)
                                        v
                                        (text/split-page-refs-without-brackets v))]
                                [k v]))))
@@ -160,10 +162,11 @@
                    (->>
                     (map
                      (fn [[_ v]]
-                       (let [[k v] (util/split-first " " v)]
-                         (mapv
-                          string/trim
-                          [k v])))
+                       (do
+                         (let [[k v] (util/split-first " " v)]
+                          (mapv
+                           string/trim
+                           [k v]))))
                      macro-properties)
                     (into {}))
                    {})
@@ -228,17 +231,35 @@
 
 (defn ->edn
   [content config]
-  (try
-    (if (string/blank? content)
-      {}
-      (-> content
-          (parse-json config)
-          (util/json->clj)
-          (update-src-full-content content)
-          (collect-page-properties)))
-    (catch js/Error e
-      (log/error :edn/convert-failed e)
-      [])))
+  (if (string? content)
+    (try
+      (if (string/blank? content)
+        []
+        (-> content
+            (parse-json config)
+            (util/json->clj)
+            (update-src-full-content content)
+            (collect-page-properties)))
+      (catch js/Error e
+        (log/error :edn/convert-failed e)
+        []))
+    (log/error :edn/wrong-content-type content)))
+
+(defn ->edn-async
+  [content config]
+  (if util/node-test?
+    (p/resolved (->edn content config))
+    (try
+      (if (string/blank? content)
+        (p/resolved [])
+        (p/let [v (pool/add-parse-job! content config)]
+          (-> v
+              (util/json->clj)
+              (update-src-full-content content)
+              (collect-page-properties))))
+      (catch js/Error e
+        (log/error :edn/convert-failed e)
+        (p/resolved [])))))
 
 (defn opml->edn
   [content]
@@ -267,7 +288,7 @@
   (toEdn [this content config]
     (->edn content config))
   (toHtml [this content config references]
-    (exportToHtml content config references))
+    (export "html" content config references))
   (loaded? [this]
     true)
   (lazyLoad [this ok-handler]
@@ -284,3 +305,8 @@
 (defn properties?
   [ast]
   (contains? #{"Properties" "Property_Drawer"} (ffirst ast)))
+
+(defn typ-drawer?
+  [ast typ]
+  (and (contains? #{"Drawer"} (ffirst ast))
+       (= typ (second (first ast)))))

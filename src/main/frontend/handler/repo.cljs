@@ -5,6 +5,7 @@
             [frontend.config :as config]
             [frontend.date :as date]
             [frontend.db :as db]
+            [frontend.db.model :as db-model]
             [frontend.dicts :as dicts]
             [frontend.encrypt :as encrypt]
             [frontend.format :as format]
@@ -26,7 +27,8 @@
             [frontend.util :as util]
             [lambdaisland.glogi :as log]
             [promesa.core :as p]
-            [shadow.resource :as rc]))
+            [shadow.resource :as rc]
+            [clojure.set :as set]))
 
 ;; Project settings should be checked in two situations:
 ;; 1. User changes the config.edn directly in logseq.com (fn: alter-file)
@@ -121,14 +123,14 @@
                  _ (fs/mkdir-if-not-exists (str repo-dir "/" (config/get-journals-directory)))
                  file-exists? (fs/file-exists? repo-dir file-path)]
            (when-not file-exists?
-             (file-handler/reset-file! repo-url path content)
-             (if write-file?
-               (p/let [_ (fs/create-if-not-exists repo-url repo-dir file-path content)]
+             (p/let [_ (file-handler/reset-file! repo-url path content)]
+               (if write-file?
+                 (p/let [_ (fs/create-if-not-exists repo-url repo-dir file-path content)]
+                   (when-not (state/editing?)
+                     (ui-handler/re-render-root!))
+                   (git-handler/git-add repo-url path))
                  (when-not (state/editing?)
-                   (ui-handler/re-render-root!))
-                 (git-handler/git-add repo-url path))
-               (when-not (state/editing?)
-                 (ui-handler/re-render-root!))))))))))
+                   (ui-handler/re-render-root!)))))))))))
 
 (defn create-default-files!
   ([repo-url]
@@ -147,10 +149,11 @@
        (state/pub-event! [:page/create-today-journal repo-url])))))
 
 (defn- remove-non-exists-refs!
-  [data]
-  (let [block-ids (->> (map :block/uuid data)
-                       (remove nil?)
-                       (set))
+  [data all-block-ids]
+  (let [block-ids (->> (->> (map :block/uuid data)
+                        (remove nil?)
+                        (set))
+                       (set/union (set all-block-ids)))
         keep-block-ref-f (fn [refs]
                            (filter (fn [ref]
                                      (if (and (vector? ref)
@@ -169,7 +172,9 @@
   (let [files (map #(select-keys % [:file/path :file/last-modified-at]) files)
         all-data (-> (concat delete-files delete-blocks files blocks-pages)
                      (util/remove-nils))
-        all-data (if refresh? all-data (remove-non-exists-refs! all-data))]
+        all-data (if refresh?
+                   (remove-non-exists-refs! all-data (db-model/get-all-block-uuids))
+                   (remove-non-exists-refs! all-data nil))]
     (db/transact! repo-url all-data)))
 
 (defn- load-pages-metadata!
@@ -199,15 +204,15 @@
 
 (defn- parse-files-and-create-default-files-inner!
   [repo-url files delete-files delete-blocks file-paths first-clone? db-encrypted? re-render? re-render-opts metadata opts]
-  (let [refresh? (:refresh? opts)
-        parsed-files (filter
-                      (fn [file]
-                        (let [format (format/get-format (:file/path file))]
-                          (contains? config/mldoc-support-formats format)))
-                      files)
-        blocks-pages (if (seq parsed-files)
-                       (extract-handler/extract-all-blocks-pages repo-url parsed-files metadata refresh?)
-                       [])]
+  (p/let [refresh? (:refresh? opts)
+          parsed-files (filter
+                        (fn [file]
+                          (let [format (format/get-format (:file/path file))]
+                            (contains? config/mldoc-support-formats format)))
+                        files)
+          blocks-pages (if (seq parsed-files)
+                         (extract-handler/extract-all-blocks-pages repo-url parsed-files metadata refresh?)
+                         [])]
     (let [config-file (config/get-config-path)]
       (when (contains? (set file-paths) config-file)
         (when-let [content (some #(when (= (:file/path %) config-file)
@@ -237,10 +242,10 @@
     (parse-files-and-create-default-files-inner! repo-url files delete-files delete-blocks file-paths first-clone? db-encrypted? re-render? re-render-opts metadata opts)))
 
 (defn parse-files-and-load-to-db!
-  [repo-url files {:keys [first-clone? delete-files delete-blocks re-render? re-render-opts] :as opts
+  [repo-url files {:keys [first-clone? delete-files delete-blocks re-render? re-render-opts refresh?] :as opts
                    :or {re-render? true}}]
   (state/set-loading-files! false)
-  (state/set-importing-to-db! true)
+  (when-not refresh? (state/set-importing-to-db! true))
   (let [file-paths (map :file/path files)]
     (let [metadata-file (config/get-metadata-path)
           metadata-content (some #(when (= (:file/path %) metadata-file)
@@ -549,7 +554,8 @@
              (create-config-file-if-not-exists repo)
              (create-contents-file repo)
              (create-custom-theme repo)
-             (state/set-db-restoring! false)))
+             (state/set-db-restoring! false)
+             (ui-handler/re-render-root!)))
     (js/setTimeout setup-local-repo-if-not-exists! 100)))
 
 (defn periodically-pull-current-repo

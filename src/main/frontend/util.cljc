@@ -370,6 +370,11 @@
    (defn stop [e]
      (when e (doto e (.preventDefault) (.stopPropagation)))))
 
+#?(:cljs
+   (defn stop-propagation [e]
+     (when e (.stopPropagation e))))
+
+
 (def speed 500)
 (def moving-frequency 15)
 
@@ -1320,6 +1325,15 @@
              (< (get-dom-top x) (get-dom-top y)))
            elements)))
 
+#?(:cljs
+   (defn calc-delta-rect-offset
+     [^js/HTMLElement target ^js/HTMLElement container]
+     (let [target-rect (bean/->clj (.toJSON (.getBoundingClientRect target)))
+           viewport-rect {:width  (.-clientWidth container)
+                          :height (.-clientHeight container)}]
+
+       {:y (- (:height viewport-rect) (:bottom target-rect))
+        :x (- (:width viewport-rect) (:right target-rect))})))
 
 (def regex-char-esc-smap
   (let [esc-chars "{}[]()&^%$#!?*.+|\\"]
@@ -1380,3 +1394,11 @@
   (if (wrapped-by-quotes? v)
     (unquote-string v)
     v))
+
+#?(:cljs
+   (defn right-click?
+     [e]
+     (let [which (gobj/get e "which")
+           button (gobj/get e "button")]
+       (or (= which 3)
+           (= button 2)))))

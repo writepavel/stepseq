@@ -226,7 +226,8 @@
                                               (string? v)
                                               (contains? #{:alias :aliases :tags} k))
                                            (set [v])
-                                           v)]
+                                           v)
+                                       v (if (coll? v) (set v) v)]
                                    [k v]))))]
       {:properties (into {} properties)
        :properties-order (map first properties)
@@ -268,16 +269,17 @@
 (defn convert-page-if-journal
   "Convert journal file name to user' custom date format"
   [original-page-name]
-  (let [page-name (string/lower-case original-page-name)
-        day (date/journal-title->int page-name)]
-    (if day
-      (let [original-page-name (date/int->journal-title day)]
-        [original-page-name (string/lower-case original-page-name) day])
-      [original-page-name page-name day])))
+  (when original-page-name
+    (let [page-name (string/lower-case original-page-name)
+         day (date/journal-title->int page-name)]
+     (if day
+       (let [original-page-name (date/int->journal-title day)]
+         [original-page-name (string/lower-case original-page-name) day])
+       [original-page-name page-name day]))))
 
 (defn page-name->map
   [original-page-name with-id?]
-  (when original-page-name
+  (when (and original-page-name (string? original-page-name))
     (let [original-page-name (util/remove-boundary-slashes original-page-name)
           [original-page-name page-name journal-day] (convert-page-if-journal original-page-name)
           namespace? (and (string/includes? original-page-name "/")
@@ -310,8 +312,9 @@
        (when-let [page (get-page-reference form)]
          (swap! refs conj page))
        (when-let [tag (get-tag form)]
-         (when (util/tag-valid? tag)
-           (swap! refs conj tag)))
+         (let [tag (text/page-ref-un-brackets! tag)]
+           (when (util/tag-valid? tag)
+            (swap! refs conj tag))))
        form)
      (concat title body))
     (let [refs (remove string/blank? @refs)
@@ -411,7 +414,8 @@
   [{:keys [tags] :as block}]
   (if (seq tags)
     (assoc block :tags (map (fn [tag]
-                              [:block/name (string/lower-case tag)]) tags))
+                              (let [tag (text/page-ref-un-brackets! tag)]
+                                [:block/name (string/lower-case tag)])) tags))
     block))
 
 (defn src-block?

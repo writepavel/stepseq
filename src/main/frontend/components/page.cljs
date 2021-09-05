@@ -45,7 +45,8 @@
             [frontend.text :as text]
             [frontend.modules.shortcut.core :as shortcut]
             [frontend.handler.block :as block-handler]
-            [cljs-bean.core :as bean]))
+            [cljs-bean.core :as bean]
+            [frontend.handler.shell :as shell]))
 
 (defn- get-page-name
   [state]
@@ -109,18 +110,25 @@
      [:span.opacity-50
       "Click here to edit..."]]]])
 
-(rum/defc add-button < rum/reactive
-  [page-name]
-  [:div.ls-block.flex-1.flex-col.rounded-sm {:style {:width "100%"}}
-   [:div.flex.flex-row
-    [:div {:style {:height 24
-                   :margin-left 2}}
-     (when-not (state/sub [:editor/block])
-       [:a.add-button-link
-        {:on-click (fn []
-                     (when-let [block (editor-handler/api-insert-new-block! "" {:page page-name})]
-                       (js/setTimeout #(editor-handler/edit-block! block :max nil (:block/uuid block)) 100)))}
-        svg/plus-circle])]]])
+(rum/defcs add-button < rum/reactive
+  (rum/local false ::show?)
+  [state page-name]
+  (let [show? (::show? state)]
+    [:div.flex-1.flex-col.rounded-sm.add-button
+     [:div.flex.flex-row
+      [:div.block {:style {:height      24
+                           :width       24
+                           :margin-left 2}
+                   :on-mouse-over (fn [] (reset! show? true))}
+       (if (and (not (state/sub [:editor/block])) @show?)
+         [:a.add-button-link.block
+          {:on-mouse-out (fn [] (reset! show? false))
+           :on-click (fn []
+                       (when-let [block (editor-handler/api-insert-new-block! "" {:page page-name})]
+                         (js/setTimeout #(editor-handler/edit-block! block :max nil (:block/uuid block)) 100)))}
+          svg/plus-circle]
+
+         [:span])]]]))
 
 (rum/defc page-blocks-cp < rum/reactive
   db-mixins/query
@@ -222,7 +230,7 @@
   [state title page-name close-fn]
   (let [input (get state ::input)]
     (rum/with-context [[t] i18n/*tongue-context*]
-      [:div.w-full.sm:max-w-lg.sm:w-96
+      [:div
        [:div.sm:flex.sm:items-start
         [:div.mt-3.text-center.sm:mt-0.sm:text-left
          [:h3#modal-headline.text-lg.leading-6.font-medium
@@ -268,7 +276,8 @@
           (for [[original-name name] pages]
             [:li {:key (str "tagged-page-" name)}
              [:a {:href (rfe/href :page {:name name})}
-              original-name]])] false)]])))
+              original-name]])]
+         {:default-collapsed? false})]])))
 
 (defn page-menu
   [repo t page page-name page-original-name title journal? public? developer-mode?]
@@ -312,6 +321,12 @@
                                       page-name
                                       (if public? false true))
                                      (state/close-modal!))}})
+
+                      (when (util/electron?)
+                        {:title   (t :page/version-history)
+                         :options {:on-click
+                                   (fn []
+                                     (shell/get-file-latest-git-log page 100))}})
 
                       (when plugin-handler/lsp-enabled?
                         (for [[_ {:keys [key label] :as cmd} action pid] (state/get-plugins-commands-with-type :page-menu-item)]
@@ -490,7 +505,7 @@
 (defonce *focus-nodes (atom []))
 (defonce *graph-reset? (atom false))
 (defonce *journal? (atom nil))
-(defonce *orphan-pages? (atom nil))
+(defonce *orphan-pages? (atom true))
 (defonce *builtin-pages? (atom nil))
 
 (rum/defc graph-filters < rum/reactive

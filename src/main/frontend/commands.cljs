@@ -149,7 +149,7 @@
                  (util/format "\n#+END_%s" (string/upper-case type)))
          template (str
                    left
-                   (if optional (str " " optional) "")
+                   (if optional (str (if (= format :markdown) "" " ") optional) "")
                    "\n"
                    right)
          backward-pos (if (= type "src")
@@ -188,7 +188,7 @@
      ["Export" (->block "export")]
      ["Verse" (->block "verse")]
      ["Ascii" (->block "export" "ascii")]
-     ["Center" (->block "export")]
+     ["Center" (->block "center")]
      ["Comment" (->block "comment")]]
 
     ;; Allow user to modify or extend, should specify how to extend.

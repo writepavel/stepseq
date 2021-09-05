@@ -14,6 +14,7 @@
             [frontend.handler.page :as page-handler]
             [frontend.handler.repo :as repo-handler]
             [frontend.handler.ui :as ui-handler]
+            [frontend.handler.command-palette :as command-palette]
             [frontend.idb :as idb]
             [frontend.modules.instrumentation.core :as instrument]
             [frontend.modules.shortcut.core :as shortcut]
@@ -27,7 +28,8 @@
             [lambdaisland.glogi :as log]
             [promesa.core :as p]
             [frontend.ui :as ui]
-            [frontend.error :as error]))
+            [frontend.error :as error]
+            [frontend.util.pool :as pool]))
 
 (defn set-global-error-notification!
   []
@@ -172,7 +174,8 @@
 (defn- register-components-fns!
   []
   (state/set-page-blocks-cp! page/page-blocks-cp)
-  (state/set-editor-cp! editor/box))
+  (state/set-editor-cp! editor/box)
+  (command-palette/register-global-shortcut-commands))
 
 (defn start!
   [render]
@@ -200,6 +203,7 @@
     (reset! db/*sync-search-indice-f search/sync-search-indice!)
     (db/run-batch-txs!)
     (file-handler/run-writes-chan!)
+    (pool/init-parser-pool!)
     (when (util/electron?)
       (el/listen!))))
 

@@ -12,11 +12,16 @@
             [cljs.core.async :as async]
             [lambdaisland.glogi :as log]
             [cljs-time.core :as t]
+            [promesa.core :as p]
+            [electron.ipc :as ipc]
             [cljs-time.format :as tf]))
 
 (defonce ^:private state
-  (atom
-   (let [document-mode? (or (storage/get :document/mode?) false)]
+  (let [document-mode? (or (storage/get :document/mode?) false)
+        current-graph (let [graph (storage/get :git/current-repo)]
+                        (when graph (ipc/ipc "setCurrentGraph" graph))
+                        graph)]
+    (atom
      {:route-match nil
       :today nil
       :system/events (async/chan 100)
@@ -36,7 +41,7 @@
       :network/online? true
       :indexeddb/support? true
       :me nil
-      :git/current-repo (storage/get :git/current-repo)
+      :git/current-repo current-graph
       :git/status {}
       :format/loading {}
       :draw? false
@@ -67,6 +72,7 @@
       :ui/file-component nil
       :ui/custom-query-components {}
       :ui/show-recent? false
+      :ui/command-palette-open? false
       :ui/developer-mode? (or (= (storage/get "developer-mode") "true")
                               false)
       ;; remember scroll positions of visited paths
@@ -121,6 +127,7 @@
       ;; electron
       :electron/updater-pending? false
       :electron/updater {}
+      :electron/user-cfgs nil
 
       ;; plugin
       :plugin/indicator-text        nil
@@ -144,10 +151,14 @@
       ;; copied blocks
       :copy/blocks {:copy/content nil :copy/block-tree nil}
 
-      :copy/export-block-text-indent-style  (atom "dashes")
-      :copy/export-block-text-remove-options (atom #{})
-
+      :copy/export-block-text-indent-style  (or (storage/get :copy/export-block-text-indent-style)
+                                                "dashes")
+      :copy/export-block-text-remove-options (or (storage/get :copy/export-block-text-remove-options)
+                                                 #{})
       :date-picker/date nil
+
+      ;; command palette
+      :command-palette/commands []
 
       :view/components {}})))
 
@@ -388,7 +399,8 @@
   (swap! state assoc :git/current-repo repo)
   (if repo
     (storage/set :git/current-repo repo)
-    (storage/remove :git/current-repo)))
+    (storage/remove :git/current-repo))
+  (ipc/ipc "setCurrentGraph" repo))
 
 (defn set-preferred-format!
   [format]
@@ -738,6 +750,10 @@
   []
   (:sidebar/blocks @state))
 
+(defn clear-sidebar-blocks!
+  []
+  (set-state! :sidebar/blocks '()))
+
 (defn sidebar-block-toggle-collapse!
   [db-id]
   (when db-id
@@ -879,6 +895,15 @@
 (defn get-root-component
   []
   (get @state :ui/root-component))
+
+(defn load-app-user-cfgs
+  ([] (load-app-user-cfgs false))
+  ([refresh?]
+   (p/let [cfgs (if (or refresh? (nil? (:electron/user-cfgs @state)))
+                  (ipc/ipc "userAppCfgs")
+                  (:electron/user-cfgs @state))
+           cfgs (if (object? cfgs) (bean/->clj cfgs) cfgs)]
+     (set-state! :electron/user-cfgs cfgs))))
 
 (defn setup-electron-updater!
   []
@@ -1034,14 +1059,21 @@
   [value]
   (set-state! :indexeddb/support? value))
 
+(defn modal-opened?
+  []
+  (:modal/show? @state))
+
 (defn set-modal!
   ([modal-panel-content]
-   (set-modal! modal-panel-content false))
-  ([modal-panel-content fullscreen?]
+   (set-modal! modal-panel-content
+               {:fullscreen? false
+                :close-btn?  true}))
+  ([modal-panel-content {:keys [fullscreen? close-btn?]}]
    (swap! state assoc
           :modal/show? (boolean modal-panel-content)
           :modal/panel-content modal-panel-content
-          :modal/fullscreen? fullscreen?)))
+          :modal/fullscreen? fullscreen?
+          :modal/close-btn? close-btn?)))
 
 (defn close-modal!
   []
@@ -1365,9 +1397,21 @@
 (defn get-export-block-text-indent-style []
   (:copy/export-block-text-indent-style @state))
 
+(defn set-export-block-text-indent-style!
+  [v]
+  (set-state! :copy/export-block-text-indent-style v)
+  (storage/set :copy/export-block-text-indent-style v))
+
 (defn get-export-block-text-remove-options []
   (:copy/export-block-text-remove-options @state))
 
+(defn update-export-block-text-remove-options!
+  [e k]
+  (let [f (if (util/echecked? e) conj disj)]
+    (update-state! :copy/export-block-text-remove-options
+                   #(f % k))
+    (storage/set :copy/export-block-text-remove-options
+                 (get-export-block-text-remove-options))))
 
 (defn set-editor-args!
   [args]

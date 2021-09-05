@@ -26,14 +26,13 @@
   <title>Logseq: A privacy-first platform for knowledge management and collaboration</title>
   <meta content="logseq" property="og:site_name">
   <meta content="A privacy-first, open-source platform for knowledge management and collaboration." name="description">
-  <script>window.localStorage.getItem('http-entry-port') && (location.href = 'http://localhost:' + window.localStorage.getItem('http-entry-port'))</script>
 </head>
 <body>
 <div id="root"></div>
 <script>window.__LSP__HOST__ = true</script>
 <script>window.user = null</script>
 <script>
- window.EXCALIDRAW_ASSET_PATH = "./js/";
+  window.EXCALIDRAW_ASSET_PATH = "./js/";
 </script>
 <script src="./js/magic_portal.js"></script>
 <script>let worker = new Worker('./js/worker.js')

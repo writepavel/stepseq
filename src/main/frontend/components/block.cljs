@@ -28,6 +28,8 @@
             [frontend.extensions.zotero :as zotero]
             [frontend.format.block :as block]
             [frontend.format.mldoc :as mldoc]
+            [frontend.components.plugins :as plugins]
+            [frontend.handler.plugin :as plugin-handler]
             [frontend.handler.block :as block-handler]
             [frontend.handler.dnd :as dnd]
             [frontend.handler.editor :as editor-handler]
@@ -44,7 +46,9 @@
             [frontend.text :as text]
             [frontend.ui :as ui]
             [frontend.util :as util]
+            [frontend.util.clock :as clock]
             [frontend.util.property :as property]
+            [frontend.util.drawer :as drawer]
             [goog.dom :as gdom]
             [goog.object :as gobj]
             [lambdaisland.glogi :as log]
@@ -248,12 +252,17 @@
      (if (and (config/local-asset? href)
               (config/local-db? (state/get-current-repo)))
        (asset-link config title href label metadata full_text)
-       (let [href (cond
+       (let [protocol (and (= "Complex" (first url))
+                           (:protocol (second url)))
+             href (cond
                     (util/starts-with? href "http")
                     href
 
                     config/publishing?
                     (subs href 1)
+
+                    (= protocol "data")
+                    href
 
                     :else
                     (get-file-absolute-path config href))]
@@ -457,8 +466,7 @@
 
      (if (= "pdf" ext-name)
        [:a.asset-ref.is-pdf
-        {:href "javascript:void(0);"
-         :on-mouse-down (fn [e]
+        {:on-mouse-down (fn [e]
                           (when-let [current (pdf-assets/inflate-asset full-path)]
                             (util/stop e)
                             (state/set-state! :pdf/current current)))}
@@ -588,6 +596,7 @@
 (declare block-content)
 (declare block-container)
 (declare block-parents)
+
 (rum/defc block-reference < rum/reactive
   [config id label]
   (when (and
@@ -599,43 +608,48 @@
           hl-type (get-in block [:block/properties :hl-type])
           repo (state/get-current-repo)]
       (if block
-        [:div.block-ref-wrap.inline
+        (let [title (let [title (:block/title block)
+                          block-content (block-content (assoc config :block-ref? true)
+                                                       block nil (:block/uuid block)
+                                                       (:slide? config))
+                          class (if (seq title) "block-ref" "block-ref-no-title")]
+                      [:span {:class class}
+                       block-content])
+              inner (if label
+                      (->elem
+                       :span.block-ref
+                       (map-inline config label))
+                      title)]
+          [:div.block-ref-wrap.inline
+           {:data-type    (name (or block-type :default))
+            :data-hl-type hl-type
+            :on-mouse-down
+            (fn [^js/MouseEvent e]
+              (if (util/right-click? e)
+                (state/set-state! :block-ref/context {:block (:block config)
+                                                      :block-ref block-id})
 
-         {:data-type    (name (or block-type :default))
-          :data-hl-type hl-type
-          :on-mouse-down
-          (fn [^js/MouseEvent e]
-            (when (or (gobj/get e "shiftKey")
-                      (not (.. e -target (closest ".blank"))))
-              (util/stop e)
+                (when (and
+                       (or (gobj/get e "shiftKey")
+                           (not (.. e -target (closest ".blank"))))
+                       (not (util/right-click? e)))
+                  (util/stop e)
 
-              (if (gobj/get e "shiftKey")
-                (state/sidebar-add-block!
-                  (state/get-current-repo)
-                  (:db/id block)
-                  :block-ref
-                  {:block block})
+                  (if (gobj/get e "shiftKey")
+                    (state/sidebar-add-block!
+                     (state/get-current-repo)
+                     (:db/id block)
+                     :block-ref
+                     {:block block})
 
-                (match [block-type (util/electron?)]
-                       ;; pdf annotation
-                       [:annotation true] (pdf-assets/open-block-ref! block)
+                    (match [block-type (util/electron?)]
+                      ;; pdf annotation
+                      [:annotation true] (pdf-assets/open-block-ref! block)
 
-                       ;; default open block page
-                       :else (route-handler/redirect! {:to          :page
-                                                       :path-params {:name id}})))))}
+                      ;; default open block page
+                      :else (route-handler/redirect! {:to          :page
+                                                      :path-params {:name id}}))))))}
 
-         (let [title (let [title (:block/title block)
-                           block-content (block-content (assoc config :block-ref? true)
-                                                        block nil (:block/uuid block)
-                                                        (:slide? config))
-                           class (if (seq title) "block-ref" "block-ref-no-title")]
-                       [:span {:class class}
-                        block-content])
-               inner (if label
-                       (->elem
-                        :span.block-ref
-                        (map-inline config label))
-                       title)]
            (if (and (not (util/mobile?)) (not (:preview? config)) (nil? block-type))
              (ui/tippy {:html        (fn []
                                        [:div.tippy-wrapper.overflow-y-auto.p-4
@@ -648,7 +662,7 @@
                                           (assoc config :id (str id) :preview? true))]])
                         :interactive true
                         :delay       [1000, 100]} inner)
-             inner))]
+             inner)])
         [:span.warning.mr-1 {:title "Block ref invalid"}
          (util/format "((%s))" id)]))))
 
@@ -706,7 +720,7 @@
        [:div
         [:img.w-full.h-full.absolute
          {:src (if (util/electron?)
-                 "img/tutorial-thumb.jpg"
+                 (str (config/get-static-path) "img/tutorial-thumb.jpg")
                  "https://img.youtube.com/vi/Afmqowr0qEQ/maxresdefault.jpg")}]
         [:button
          {:class "absolute bg-red-300 w-16 h-16 -m-8 top-1/2 left-1/2 rounded-full"
@@ -803,10 +817,6 @@
       [:a {:href (str "mainto:" address)}
        address])
 
-    ;; ["Block_reference" id]
-    ;; ;; FIXME: alert when self block reference
-    ;; (block-reference (assoc config :reference? true) id nil)
-
     ["Nested_link" link]
     (nested-link config html-export? link)
 
@@ -840,6 +850,9 @@
           (and (= \* (first s))
                (not= \* (last s)))
           (->elem :a {:on-click #(route-handler/jump-to-anchor! (mldoc/anchorLink (subs s 1)))} (subs s 1))
+
+          (not (string/includes? s "."))
+          (page-reference (:html-export? config) s config label)
 
           (util/safe-re-find #"(?i)^http[s]?://" s)
           (->elem :a {:href s
@@ -952,12 +965,6 @@
                                (when-let [current (pdf-assets/inflate-asset href)]
                                  (state/set-state! :pdf/current current)))}
              (get-label-text label)]
-
-            (and
-             (util/electron?)
-             (= protocol "zotero")
-             (= (-> label get-label-text util/get-file-ext) "pdf"))
-            (zotero/zotero-pdf-link (get-label-text label) href)
 
             :else
             (->elem
@@ -1091,6 +1098,15 @@
         (= name "tutorial-video")
         (tutorial-video)
 
+        (= name "zotero-imported-file")
+        (let [[item-key filename] arguments]
+          (when (and item-key filename)
+            [:span.ml-1 (zotero/zotero-imported-file item-key filename)]))
+
+        (= name "zotero-linked-file")
+        (when-let [path (first arguments)]
+          [:span.ml-1 (zotero/zotero-linked-file path)])
+
         (= name "vimeo")
         (when-let [url (first arguments)]
           (let [Vimeo-regex #"^((?:https?:)?//)?((?:www).)?((?:player.vimeo.com|vimeo.com)?)((?:/video/)?)([\w-]+)(\S+)?$"]
@@ -1167,6 +1183,10 @@
 
             :else                       ;TODO: maybe collections?
             nil))
+
+        (and plugin-handler/lsp-enabled? (= name "renderer"))
+        (if-let [block-uuid (str (:block/uuid config))]
+          (plugins/hook-ui-slot :macro-renderer-slotted (assoc options :uuid block-uuid)))
 
         (get @macro/macros name)
         ((get @macro/macros name) config options)
@@ -1652,7 +1672,7 @@
   (let [show? (get state ::show?)]
     [:div.flex.flex-col
      [:div.text-sm.mt-1.flex.flex-row
-      [:div.opacity-50.font-medium {:style {:width 95}}
+      [:div.opacity-50.font-medium
        (str typ ": ")]
       [:a.opacity-80.hover:opacity-100
        {:on-click (fn []
@@ -1694,8 +1714,9 @@
         (editor-handler/unhighlight-blocks!)
         (let [block (or (db/pull [:block/uuid (:block/uuid block)]) block)
               f #(let [cursor-range (util/caret-range (gdom/getElement block-id))
-                       content (property/remove-built-in-properties (:block/format block)
-                                                                    content)]
+                       content (-> (property/remove-built-in-properties (:block/format block)
+                                                                        content)
+                                   (drawer/remove-logbook))]
                    ;; save current editing block
                    (let [{:keys [value] :as state} (editor-handler/get-state)]
                      (editor-handler/save-block! state value))
@@ -1827,32 +1848,38 @@
 
         (when (and (= (:block/marker block) "DONE")
                    (state/enable-timetracking?))
-          (let [start-time (or
-                            (get properties :now)
-                            (get properties :doing)
-                            (get properties :in-progress)
-                            (get properties :later)
-                            (get properties :todo))
-                finish-time (get properties :done)]
-            (when (and start-time finish-time (> finish-time start-time))
-              [:div.text-sm.time-spent.ml-1 {:title (str (date/int->local-time start-time) " ~ " (date/int->local-time finish-time))
-                                             :style {:padding-top 3}}
-               [:a.opacity-30.hover:opacity-100
-                (utils/timeConversion (- finish-time start-time))]])))
+          (let [summary (clock/clock-summary body true)]
+            (when (and summary
+                       (not= summary "0m")
+                       (not (string/blank? summary)))
+              (ui/tippy {:html        (fn []
+                                        (when-let [logbook (drawer/get-logbook body)]
+                                          (let [clocks (->> (last logbook)
+                                                            (remove string/blank?))]
+                                            [:div.p-4
+                                             [:div.font-bold.mb-2 "LOGBOOK:"]
+                                             [:ul
+                                              (for [clock (take 10 (reverse clocks))]
+                                                [:li clock])]])))
+                         :interactive true
+                         :delay       [1000, 100]}
+               [:div.text-sm.time-spent.ml-1 {:style {:padding-top 3}}
+                [:a.fade-link
+                 summary]]))))
 
         (let [block-refs-count (count (:block/_refs (db/entity (:db/id block))))]
           (when (and block-refs-count (> block-refs-count 0))
-           [:div
-            [:a.open-block-ref-link.bg-base-2.text-sm.ml-2
-             {:title "Open block references"
-              :style {:margin-top -1}
-              :on-click (fn []
-                          (state/sidebar-add-block!
-                           (state/get-current-repo)
-                           (:db/id block)
-                           :block-ref
-                           {:block block}))}
-             block-refs-count]]))]])))
+            [:div
+             [:a.open-block-ref-link.bg-base-2.text-sm.ml-2
+              {:title "Open block references"
+               :style {:margin-top -1}
+               :on-click (fn []
+                           (state/sidebar-add-block!
+                            (state/get-current-repo)
+                            (:db/id block)
+                            :block-ref
+                            {:block block}))}
+              block-refs-count]]))]])))
 
 (defn non-dragging?
   [e]
@@ -2329,7 +2356,7 @@
                                                                     (not table?)))
                               true)]])
 
-               [:a.mx-2.opacity-60.hover:opacity-100.block
+               [:a.mx-2.block.fade-link
                 {:on-click (fn []
                              (let [all-keys (query-table/get-keys result page-list?)]
                                (state/pub-event! [:modal/set-query-properties current-block all-keys])))}
@@ -2377,7 +2404,7 @@
 
               :else
               [:div.text-sm.mt-2.ml-2.font-medium.opacity-50 "Empty"])]
-           collapsed?))]))))
+           {:default-collapsed? collapsed?}))]))))
 
 (defn admonition
   [config type options result]
@@ -2439,6 +2466,21 @@
                    :markdown)]
     (try
       (match item
+        ["Drawer" name lines]
+
+        (when (not= name "logbook")
+          [:div.flex.flex-col
+           [:div.text-sm.mt-1.flex.flex-row
+            [:div.drawer {:data-drawer-name name}
+             (ui/foldable
+              [:div.opacity-50.font-medium
+               (util/format ":%s:" (string/upper-case name))]
+              [:div (apply str lines)
+               [:div.opacity-50.font-medium {:style {:width 95}}
+                ":END:"]]
+              {:default-collapsed? true
+               :title-trigger? true})]]])
+
         ["Properties" m]
         [:div.properties
          (for [[k v] (dissoc m :roam_alias :roam_tags)]
@@ -2540,6 +2582,11 @@
 
         ["Custom" "pinned" options result content]
         (admonition config "pinned" options result)
+
+        ["Custom" "center" options l content]
+        (->elem
+         :div.text-center
+         (markup-elements-cp config l))
 
         ["Custom" name options l content]
         (->elem
@@ -2715,7 +2762,8 @@
                       (block-parents config (state/get-current-repo) (:block/uuid block)
                                      (:block/format block)
                                      false)])
-                   (blocks-container blocks (assoc config :breadcrumb-show? false))])))])))]
+                   (blocks-container blocks (assoc config :breadcrumb-show? false))]))
+              {})])))]
 
      (and (:group-by-page? config)
             (vector? (first blocks)))
@@ -2731,7 +2779,8 @@
               [:div
                (page-cp config page)
                (when alias? [:span.text-sm.font-medium.opacity-50 " Alias"])]
-              (blocks-container blocks config))])))]
+              (blocks-container blocks config)
+              {})])))]
 
      :else
      (blocks-container blocks config))])

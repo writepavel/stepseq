@@ -1,13 +1,13 @@
 (ns frontend.extensions.zotero.extractor
-  (:require [clojure.string :as str]
-            [frontend.util :as util]
-            [frontend.extensions.zotero.schema :as schema]
-            [frontend.extensions.html-parser :as html-parser]
-            [frontend.date :as date]
+  (:require [clojure.set :refer [rename-keys]]
+            [clojure.string :as str]
             [clojure.string :as string]
-            [clojure.set :refer [rename-keys]]
+            [frontend.date :as date]
+            [frontend.extensions.html-parser :as html-parser]
+            [frontend.extensions.zotero.schema :as schema]
             [frontend.extensions.zotero.setting :as setting]
-            [frontend.extensions.zotero.api :as api]))
+            [frontend.handler.notification :as notification]
+            [frontend.util :as util]))
 
 (defn item-type [item] (-> item :data :item-type))
 
@@ -83,8 +83,13 @@
        (remove (fn [[_ v]] (str/includes? (str v) "\n")))
        (into (array-map))))
 
-(defn markdown-link [label link]
-  (util/format "[%s](%s)" label link))
+(defn markdown-link
+  ([label link]
+   (markdown-link label link false))
+  ([label link display?]
+   (if display?
+     (util/format "![%s](%s)" label link)
+     (util/format "[%s](%s)" label link))))
 
 (defn local-link [item]
   (let [type (-> item :library :type)
@@ -127,7 +132,7 @@
                                 :tags tags
                                 :date date
                                 :item-type (util/format "[[%s]]" type))
-                         (dissoc :creators)
+                         (dissoc :creators :abstract-note)
                          (rename-keys {:title :original-title})
                          (assoc :title (page-name item)))]
     (->> data
@@ -139,22 +144,44 @@
   (let [note-html (-> item :data :note)]
     (html-parser/parse :markdown note-html)))
 
+(defn zotero-imported-file-macro [item-key filename]
+  (util/format "{{zotero-imported-file %s, %s}}" item-key (pr-str filename)))
+
+(defn zotero-linked-file-macro [path]
+  (util/format "{{zotero-linked-file %s}}" (pr-str path)))
+
 (defmethod extract "attachment"
   [item]
-  (let [{:keys [title filename url link-mode path]} (-> item :data)]
-    (cond
-      (contains? #{"imported_file" "imported_url" "linked_file"} link-mode)
-      (markdown-link (or title filename) (local-link item))
-
-      (some? url)
-      (markdown-link title url)
-
-      :else
-      nil)))
+  (let [{:keys [title url link-mode path content-type filename]} (-> item :data)]
+    (case link-mode
+      "imported_file"
+      (str
+       (markdown-link title (local-link item))
+       " "
+       (zotero-imported-file-macro (item-key item) filename))
+      "linked_file"
+      (if (str/starts-with? path "attachments:")
+        (str
+         (markdown-link title (local-link item))
+         " "
+         (zotero-linked-file-macro path))
+        (let [path (str/replace path " " "%20")]
+          (if (= content-type "application/pdf")
+            (markdown-link title (str "file://" path) true)
+            (markdown-link title (str "file://" path)))))
+      "imported_url"
+      (str
+       (markdown-link title url)
+       " "
+       (zotero-imported-file-macro (item-key item) filename))
+      "linked_url"
+      (markdown-link title url))))
 
 (defmethod extract :default
   [item]
   (let [page-name  (page-name item)
-        properties (properties item)]
+        properties (properties item)
+        abstract-note (-> item :data :abstract-note)]
     {:page-name  page-name
-     :properties properties}))
+     :properties properties
+     :abstract-note abstract-note}))

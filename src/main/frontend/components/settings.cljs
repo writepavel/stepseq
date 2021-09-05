@@ -16,6 +16,8 @@
             [frontend.modules.shortcut.data-helper :as shortcut-helper]
             [frontend.state :as state]
             [frontend.ui :as ui]
+            [electron.ipc :as ipc]
+            [promesa.core :as p]
             [frontend.util :refer [classnames] :as util]
             [frontend.version :refer [version]]
             [goog.object :as gobj]
@@ -126,21 +128,21 @@
 (rum/defc delete-account-confirm
   [close-fn]
   (rum/with-context [[t] i18n/*tongue-context*]
-                    [:div
-                     (ui/admonition
-                       :important
-                       [:p.text-gray-700 (t :user/delete-account-notice)])
-                     [:div.mt-5.sm:mt-4.sm:flex.sm:flex-row-reverse
-                      [:span.flex.w-full.rounded-md.sm:ml-3.sm:w-auto
-                       [:button.inline-flex.justify-center.w-full.rounded-md.border.border-transparent.px-4.py-2.bg-indigo-600.text-base.leading-6.font-medium.text-white.shadow-sm.hover:bg-indigo-500.focus:outline-none.focus:border-indigo-700.focus:shadow-outline-indigo.transition.ease-in-out.duration-150.sm:text-sm.sm:leading-5
-                        {:type     "button"
-                         :on-click user-handler/delete-account!}
-                        (t :user/delete-account)]]
-                      [:span.mt-3.flex.w-full.rounded-md.sm:mt-0.sm:w-auto
-                       [:button.inline-flex.justify-center.w-full.rounded-md.border.border-gray-300.px-4.py-2.bg-white.text-base.leading-6.font-medium.text-gray-700.shadow-sm.hover:text-gray-500.focus:outline-none.focus:border-blue-300.focus:shadow-outline-blue.transition.ease-in-out.duration-150.sm:text-sm.sm:leading-5
-                        {:type     "button"
-                         :on-click close-fn}
-                        "Cancel"]]]]))
+    [:div
+     (ui/admonition
+      :important
+      [:p.text-gray-700 (t :user/delete-account-notice)])
+     [:div.mt-5.sm:mt-4.sm:flex.sm:flex-row-reverse
+      [:span.flex.w-full.rounded-md.sm:ml-3.sm:w-auto
+       [:button.inline-flex.justify-center.w-full.rounded-md.border.border-transparent.px-4.py-2.bg-indigo-600.text-base.leading-6.font-medium.text-white.shadow-sm.hover:bg-indigo-500.focus:outline-none.focus:border-indigo-700.focus:shadow-outline-indigo.transition.ease-in-out.duration-150.sm:text-sm.sm:leading-5
+        {:type     "button"
+         :on-click user-handler/delete-account!}
+        (t :user/delete-account)]]
+      [:span.mt-3.flex.w-full.rounded-md.sm:mt-0.sm:w-auto
+       [:button.inline-flex.justify-center.w-full.rounded-md.border.border-gray-300.px-4.py-2.bg-white.text-base.leading-6.font-medium.text-gray-700.shadow-sm.hover:text-gray-500.focus:outline-none.focus:border-blue-300.focus:shadow-outline-blue.transition.ease-in-out.duration-150.sm:text-sm.sm:leading-5
+        {:type     "button"
+         :on-click close-fn}
+        "Cancel"]]]]))
 
 (rum/defc outdenting-hint
   []
@@ -158,10 +160,10 @@
 
 (defn edit-config-edn []
   (rum/with-context [[t] i18n/*tongue-context*]
-                    [:div.text-sm
-                     [:a.text-xs {:href     (rfe/href :file {:path (config/get-config-path)})
-                                  :on-click #(js/setTimeout (fn [] (ui-handler/toggle-settings-modal!)))}
-                      (t :settings-page/edit-config-edn)]]))
+    [:div.text-sm
+     [:a.text-xs {:href     (rfe/href :file {:path (config/get-config-path)})
+                  :on-click #(js/setTimeout (fn [] (ui-handler/toggle-settings-modal!)))}
+      (t :settings-page/edit-config-edn)]]))
 
 (defn show-brackets-row [t show-brackets?]
   [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
@@ -175,6 +177,74 @@
                 true)]]
    [:div {:style {:text-align "right"}}
     (ui/keyboard-shortcut (shortcut-helper/gen-shortcut-seq :ui/toggle-brackets))]])
+
+(rum/defcs switch-spell-check-row < rum/reactive
+  [state t]
+  (let [enabled? (state/sub [:electron/user-cfgs :spell-check])
+        enabled? (if (nil? enabled?) true enabled?)]
+
+    [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
+     [:label.block.text-sm.font-medium.leading-5.opacity-70
+      (t :settings-page/spell-checker)]
+     [:div
+      [:div.rounded-md.sm:max-w-xs
+       (ui/toggle
+        enabled?
+        (fn []
+          (state/set-state! [:electron/user-cfgs :spell-check] (not enabled?))
+          (p/then (ipc/ipc "userAppCfgs" :spell-check (not enabled?))
+                  #(if (js/confirm (t :relaunch-confirm-to-work))
+                     (js/logseq.api.relaunch))))
+        true)]]]))
+
+(rum/defcs switch-git-auto-commit-row < rum/reactive
+  [state t]
+  (let [enabled? (not (state/sub [:electron/user-cfgs :git/disable-auto-commit?]))]
+    [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
+     [:label.block.text-sm.font-medium.leading-5.opacity-70
+      "Enable Git auto commit"]
+     [:div
+      [:div.rounded-md.sm:max-w-xs
+       (ui/toggle
+        enabled?
+        (fn []
+          (state/set-state! [:electron/user-cfgs :git/disable-auto-commit?] enabled?)
+          (ipc/ipc "userAppCfgs" :git/disable-auto-commit? enabled?))
+        true)]]]))
+
+(rum/defcs git-auto-commit-seconds < rum/reactive
+  [state t]
+  (let [secs (or (state/sub [:electron/user-cfgs :git/auto-commit-seconds]) 60)]
+    [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
+     [:label.block.text-sm.font-medium.leading-5.opacity-70
+      "Git auto commit seconds"]
+     [:div.mt-1.sm:mt-0.sm:col-span-2
+      [:div.max-w-lg.rounded-md.sm:max-w-xs
+       [:input#home-default-page.form-input.is-small.transition.duration-150.ease-in-out
+        {:default-value secs
+         :on-blur       (fn [event]
+                          (when-let [value (-> (util/evalue event)
+                                               util/safe-parse-int)]
+                            (when (< 0 value (inc 600))
+                              (state/set-state! [:electron/user-cfgs :git/auto-commit-seconds] value)
+                              (ipc/ipc "userAppCfgs" :git/auto-commit-seconds value))))}]]]]))
+
+(rum/defc app-auto-update-row < rum/reactive
+  [t]
+  (let [enabled? (state/sub [:electron/user-cfgs :auto-update])
+        enabled? (if (nil? enabled?) true enabled?)]
+
+    [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
+     [:label.block.text-sm.font-medium.leading-5.opacity-70
+      (t :settings-page/auto-updater)]
+     [:div
+      [:div.rounded-md.sm:max-w-xs
+       (ui/toggle
+        enabled?
+        (fn []
+          (state/set-state! [:electron/user-cfgs :auto-update] (not enabled?))
+          (ipc/ipc "userAppCfgs" :auto-update (not enabled?)))
+        true)]]]))
 
 (rum/defcs current-graph
   [state t]
@@ -266,8 +336,8 @@
                       (when-not (string/blank? format)
                         (config-handler/set-config! :journal/page-title-format format)
                         (notification/show!
-                          [:div "You need to re-index your graph to make the change works"]
-                          :success)
+                         [:div "You need to re-index your graph to make the change works"]
+                         :success)
                         (state/close-modal!)
                         (route-handler/redirect! {:to :repos}))))}
       (for [format (sort (date/journal-title-formatters))]
@@ -377,7 +447,7 @@
 
 (defn encryption-row [t enable-encryption?]
   (toggle "enable_encryption"
-          (t :settings-page/enable-encryption)
+          (str (t :settings-page/enable-encryption) "\n(experimental!)")
           enable-encryption?
           (fn []
             (let [value (not enable-encryption?)]
@@ -430,11 +500,11 @@
           (t :settings-page/disable-sentry)
           (not instrument-disabled?)
           (fn [] (instrument/disable-instrument
-                   (not instrument-disabled?)))
+                 (not instrument-disabled?)))
           [:span.text-sm.opacity-50 "Logseq will never collect your local graph database or sell your data."]))
 
 (defn clear-cache-row [t]
-  [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-center.sm:pt-5
+  [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-center
    [:label.block.text-sm.font-medium.leading-5.opacity-70
     {:for "clear_cache"}
     (t :settings-page/clear-cache)]
@@ -468,9 +538,16 @@
 
 (rum/defcs settings
   < (rum/local :general ::active)
-    rum/reactive
+  {:will-mount
+   (fn [state]
+     (state/load-app-user-cfgs)
+     state)
+   :will-unmount
+   (fn [state]
+     (state/close-settings!)
+     state)}
+  rum/reactive
   [state]
-
   (let [preferred-format (state/get-preferred-format)
         preferred-date-format (state/get-date-formatter)
         preferred-workflow (state/get-preferred-workflow)
@@ -505,11 +582,12 @@
 
        [:div.cp__settings-inner.md:flex
 
-        [:aside.md:w-40
+        [:aside.md:w-64
          [:ul
           (for [[label text icon] [[:general (t :settings-page/tab-general) (svg/adjustments 16)]
                                    [:editor (t :settings-page/tab-editor) (svg/icon-editor 16)]
                                    [:shortcuts (t :settings-page/tab-shortcuts) (svg/icon-cmd 18)]
+                                   [:git (t :settings-page/tab-version-control) svg/git]
                                    [:advanced (t :settings-page/tab-advanced) (svg/icon-cli 16)]]]
 
             [:li
@@ -537,6 +615,7 @@
             (workflow-row t preferred-workflow)
             ;; (enable-block-timestamps-row t enable-block-timestamps?)
             (show-brackets-row t show-brackets?)
+            (when (util/electron?) (switch-spell-check-row t))
             (outdenting-row t logical-outdenting?)
             (tooltip-row t enable-tooltip?)
             (timetracking-row t enable-timetracking?)
@@ -550,11 +629,25 @@
            [:div.panel-wrap
             (keyboard-shortcuts-row t)]
 
+           :git
+           [:div.panel-wrap
+            [:div.text-sm.my-4
+             [:a {:href "https://git-scm.com/"
+                  :target "_blank"} "Git"]
+             " is used for pages version control, you can click the vertical three dots menu to check the page's history."]
+            (switch-git-auto-commit-row t)
+            (git-auto-commit-seconds t)
+
+            (ui/admonition
+             :warning
+             [:p "You need to restart the app after updating the settings."])]
+
            :advanced
            [:div.panel-wrap.is-advanced
-            (clear-cache-row t)
+            (when (and util/mac? (util/electron?)) (app-auto-update-row t))
             (usage-diagnostics-row t instrument-disabled?)
             (developer-mode-row t developer-mode?)
+            (clear-cache-row t)
 
             (when logged?
               [:div
@@ -577,11 +670,11 @@
                                            (user-handler/set-cors! server)
                                            (notification/show! "Custom CORS proxy updated successfully!" :success)))))}]]]]
                (ui/admonition
-                 :important
-                 [:p (t :settings-page/dont-use-other-peoples-proxy-servers)
-                  [:a {:href   "https://github.com/isomorphic-git/cors-proxy"
-                       :target "_blank"}
-                   "https://github.com/isomorphic-git/cors-proxy"]])])
+                :important
+                [:p (t :settings-page/dont-use-other-peoples-proxy-servers)
+                 [:a {:href   "https://github.com/isomorphic-git/cors-proxy"
+                      :target "_blank"}
+                  "https://github.com/isomorphic-git/cors-proxy"]])])
 
             (when logged?
               [:div
@@ -593,8 +686,8 @@
                 [:div.mt-1.sm:mt-0.sm:col-span-2
                  [:div.max-w-lg.rounded-md.sm:max-w-xs
                   (ui/button (t :user/delete-your-account)
-                             :on-click (fn []
-                                         (ui-handler/toggle-settings-modal!)
-                                         (js/setTimeout #(state/set-modal! delete-account-confirm))))]]]])]
+                    :on-click (fn []
+                                (ui-handler/toggle-settings-modal!)
+                                (js/setTimeout #(state/set-modal! delete-account-confirm))))]]]])]
 
            nil)]]])))

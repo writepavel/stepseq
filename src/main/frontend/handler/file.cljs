@@ -141,56 +141,58 @@
     (db/set-file-content! repo-url file content)
     (let [format (format/get-format file)
           utf8-content (utf8/encode content)
-          file-content [{:file/path file}]
-          tx (if (contains? config/mldoc-support-formats format)
-               (let [delete-blocks (db/delete-file-blocks! repo-url file)
-                     [pages block-ids blocks] (extract-handler/extract-blocks-pages repo-url file content utf8-content)
-                     blocks (remove-non-exists-refs! blocks)
-                     _ (util/pprint blocks)
-                     pages (extract-handler/with-ref-pages pages blocks)]
-                 (concat file-content delete-blocks pages block-ids blocks))
-               file-content)
-          tx (concat tx [(let [t (tc/to-long (t/now))]
-                           (cond->
-                             {:file/path file}
-                             new?
-                             (assoc :file/created-at t)))])]
-      (db/transact! repo-url tx))))
+          file-content [{:file/path file}]]
+      (p/let [tx (if (contains? config/mldoc-support-formats format)
+                   (p/let [delete-blocks (db/delete-file-blocks! repo-url file)
+                           [pages block-ids blocks] (extract-handler/extract-blocks-pages repo-url file content utf8-content)
+                           blocks (remove-non-exists-refs! blocks)
+                           pages (extract-handler/with-ref-pages pages blocks)]
+                     (concat file-content delete-blocks pages block-ids blocks))
+                   file-content)]
+        (let [tx (concat tx [(let [t (tc/to-long (t/now))]
+                               (cond->
+                                 {:file/path file}
+                                 new?
+                                 (assoc :file/created-at t)))])]
+          (db/transact! repo-url tx))))))
 
 ;; TODO: Remove this function in favor of `alter-files`
 (defn alter-file
-  [repo path content {:keys [reset? re-render-root? add-history? update-status? from-disk?]
+  [repo path content {:keys [reset? re-render-root? add-history? update-status? from-disk? skip-compare?]
                       :or {reset? true
                            re-render-root? false
                            add-history? true
                            update-status? false
-                           from-disk? false}}]
+                           from-disk? false
+                           skip-compare? false}}]
   (let [edit-block (state/get-edit-block)
         original-content (db/get-file-no-sub repo path)
         write-file! (if from-disk?
                       #(p/resolved nil)
-                      #(fs/write-file! repo (config/get-repo-dir repo) path content (when original-content {:old-content original-content})))]
-    (if reset?
-      (do
-        (when-let [page-id (db/get-file-page-id path)]
-          (db/transact! repo
-            [[:db/retract page-id :block/alias]
-             [:db/retract page-id :block/tags]]))
-        (reset-file! repo path content))
-      (db/set-file-content! repo path content))
-    (util/p-handle (write-file!)
-                   (fn [_]
-                     (when (= path (config/get-config-path repo))
-                       (restore-config! repo true))
-                     (when (= path (config/get-custom-css-path repo))
-                       (ui-handler/add-style-if-exists!))
-                     (when re-render-root? (ui-handler/re-render-root!))
-                     ;; (when (and add-history? original-content)
-                     ;;   (history/add-history! repo [[path original-content content]]))
-                     )
-                   (fn [error]
-                     (println "Write file failed, path: " path ", content: " content)
-                     (log/error :write/failed error)))))
+                      #(fs/write-file! repo (config/get-repo-dir repo) path content
+                                       (assoc (when original-content {:old-content original-content})
+                                              :skip-compare? skip-compare?)))]
+    (p/let [_ (if reset?
+                (do
+                  (when-let [page-id (db/get-file-page-id path)]
+                    (db/transact! repo
+                      [[:db/retract page-id :block/alias]
+                       [:db/retract page-id :block/tags]]))
+                  (reset-file! repo path content))
+                (db/set-file-content! repo path content))]
+      (util/p-handle (write-file!)
+                     (fn [_]
+                       (when (= path (config/get-config-path repo))
+                         (restore-config! repo true))
+                       (when (= path (config/get-custom-css-path repo))
+                         (ui-handler/add-style-if-exists!))
+                       (when re-render-root? (ui-handler/re-render-root!))
+                       ;; (when (and add-history? original-content)
+                       ;;   (history/add-history! repo [[path original-content content]]))
+                       )
+                     (fn [error]
+                       (println "Write file failed, path: " path ", content: " content)
+                       (log/error :write/failed error))))))
 
 (defn set-file-content!
   [repo path new-content]

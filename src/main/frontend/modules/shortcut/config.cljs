@@ -306,17 +306,40 @@
      :binding "mod+c mod+r"
      :fn      #(repo-handler/re-index!
                 nfs-handler/rebuild-index!
-                page-handler/create-today-journal!)}}
+                page-handler/create-today-journal!)}
+    :sidebar/open-today-page
+    {:desc    "Open today's page in the right sidebar"
+     :binding (if mac? "mod+shift+j" "alt+shift+j")
+     :fn      page-handler/open-today-in-sidebar}
+    :sidebar/clear
+    {:desc    "Clear all in the right sidebar"
+     :binding "mod+c mod+c"
+     :fn      #(do
+                 (state/clear-sidebar-blocks!)
+                 (state/hide-right-sidebar!))}}
 
    :shortcut.handler/misc
    ;; always overrides the copy due to "mod+c mod+s"
    {:misc/copy
     {:binding "mod+c"
-     :fn     (fn [] (js/document.execCommand "copy"))}}
+     :fn     (fn [] (js/document.execCommand "copy"))}
+
+    :command-palette/toggle
+    {:desc "Toggle command palette"
+     :binding "mod+shift+p"
+     :fn  (fn [] (state/toggle! :ui/command-palette-open?))}}
 
    :shortcut.handler/global-non-editing-only
    ^{:before m/enable-when-not-editing-mode!}
-   {:ui/toggle-document-mode
+   {:command/run
+    {:desc    "Run git command"
+     :binding "mod+shift+1"
+     :fn      #(state/pub-event! [:command/run])}
+    :go/home
+    {:desc    "Go to home"
+     :binding "g h"
+     :fn      #(route-handler/redirect! {:to :home})}
+    :ui/toggle-document-mode
     {:desc    "Toggle document mode"
      :binding "t d"
      :fn      state/toggle-document-mode!}
@@ -355,7 +378,7 @@
     ;; :ui/toggle-between-page-and-file route-handler/toggle-between-page-and-file!
     :git/commit
     {:desc    "Git commit message"
-     :binding "g c"
+     :binding "c"
      :fn      commit/show-commit-modal!}}})
 
 
@@ -451,7 +474,10 @@
 
    :shortcut.category/others
    ^{:doc "Others"}
-   [:go/journals
+   [:go/home
+    :go/journals
+    :sidebar/clear
+    :sidebar/open-today-page
     :search/re-index
     :graph/re-index
     :auto-complete/prev

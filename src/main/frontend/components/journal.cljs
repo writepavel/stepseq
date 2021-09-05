@@ -50,6 +50,14 @@
                                {:class (if intro? "intro" "")}
                                 data-page-tags
                                 (assoc :data-page-tags data-page-tags))
+
+     (when intro?
+       (ui/admonition
+        :warning
+        [:p (util/format
+             "Feel free to edit anything, no change will be saved at this moment. If you do want to persist your work, click the \"Open\" button to open a local directory%s."
+             (if (util/electron?) "" " or connect Logseq to Github"))]))
+
      (ui/foldable
       [:a.initial-color.title.journal-title
        {:href     (rfe/href :page {:name page})
@@ -66,7 +74,9 @@
        [:h1.title
         (util/capitalize-all title)]]
 
-      (blocks-cp repo page format))
+      (blocks-cp repo page format)
+
+      {})
 
      (when intro? (widgets/add-graph))
 

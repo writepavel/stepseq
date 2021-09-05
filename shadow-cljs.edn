@@ -29,7 +29,6 @@
                       :output-feature-set :es-next-in
                       :source-map true
                       :source-map-include-sources-content true
-                      :source-map-detail-level :all
                       :externs ["datascript/externs.js"
                                 "externs.js"]
                       :warnings {:fn-deprecated false}}
@@ -61,6 +60,18 @@
               :externs ["datascript/externs.js"
                         "externs.js"]
               :warnings {:fn-deprecated false}}}
+
+  :parser-worker
+  {:target :browser
+   :output-dir "./static/js"
+   :asset-path "./js"
+   :compiler-options {:source-map false
+                      :source-map-include-sources-content false}
+   :modules {:parser-worker {:entries [frontend.worker.parser]
+                             :web-worker true
+                             :prepend #shadow/env ["PATCH_PARSER_WORKER" :default ";;"]
+                             }}
+   :release {:compiler-options {:infer-externs :auto}}}
 
   :test
   {:target :node-test
@@ -114,7 +125,7 @@
            :after-load   nubank.workspaces.core/after-load
            :loader-mode  :eval
            :http-root    "public/workspaces"
-           :http-port    9670
+           :http-port    3002
            :watch-path   "static"
            :preloads     [devtools.preload
                           shadow.remote.runtime.cljs.browser]}

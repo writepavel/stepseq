@@ -1,28 +1,29 @@
 (ns frontend.handler.events
   (:refer-clojure :exclude [run!])
-  (:require [frontend.state :as state]
-            [clojure.core.async :as async]
-            [frontend.spec :as spec]
-            [frontend.ui :as ui]
-            [frontend.util :as util :refer [profile]]
-            [frontend.config :as config]
-            [frontend.handler.notification :as notification]
-            [frontend.handler.common :as common-handler]
-            [frontend.handler.editor :as editor-handler]
-            [frontend.handler.page :as page-handler]
-            [frontend.components.encryption :as encryption]
-            [frontend.components.shell :as shell]
-            [frontend.components.git :as git-component]
+  (:require [clojure.core.async :as async]
+            [clojure.set :as set]
+            [datascript.core :as d]
             [frontend.components.diff :as diff]
-            [frontend.fs.nfs :as nfs]
+            [frontend.components.encryption :as encryption]
+            [frontend.components.git :as git-component]
+            [frontend.components.shell :as shell]
+            [frontend.config :as config]
+            [frontend.db :as db]
+            [frontend.db-schema :as db-schema]
             [frontend.db.conn :as conn]
             [frontend.extensions.srs :as srs]
-            [frontend.db-schema :as db-schema]
-            [frontend.db :as db]
-            [datascript.core :as d]
+            [frontend.fs.nfs :as nfs]
+            [frontend.handler.common :as common-handler]
+            [frontend.handler.editor :as editor-handler]
+            [frontend.handler.notification :as notification]
+            [frontend.handler.page :as page-handler]
+            [frontend.spec :as spec]
+            [frontend.state :as state]
+            [frontend.ui :as ui]
+            [frontend.util :as util]
+            [rum.core :as rum]
             ["semver" :as semver]
-            [clojure.set :as set]
-            [rum.core :as rum]))
+            [clojure.string :as string]))
 
 ;; TODO: should we move all events here?
 
@@ -156,7 +157,11 @@
 (defmethod handle :file/not-matched-from-disk [[_ path disk-content db-content]]
   (state/clear-edit!)
   (when-let [repo (state/get-current-repo)]
-    (state/set-modal! #(diff/local-file repo path disk-content db-content))))
+    (when (not= (string/trim disk-content) (string/trim db-content))
+      (state/set-modal! #(diff/local-file repo path disk-content db-content)))))
+
+(defmethod handle :modal/display-file-version [[_ path content hash]]
+  (state/set-modal! #(git-component/file-specific-version path hash content)))
 
 (defmethod handle :after-db-restore [[_ repos]]
   (mapv (fn [{url :url} repo]

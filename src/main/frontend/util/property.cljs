@@ -38,6 +38,14 @@
   (and (string/includes? content properties-start)
        (util/safe-re-find properties-end-pattern content)))
 
+(defn remove-empty-properties
+  [content]
+  (if (contains-properties? content)
+    (string/replace content
+                    (re-pattern ":PROPERTIES:\n:END:\n*")
+                    "")
+    content))
+
 (defn simplified-property?
   [line]
   (boolean
@@ -125,7 +133,7 @@
             properties-in-content? (and title (= (string/upper-case title) properties-start))
             no-title? (or (simplified-property? title) properties-in-content?)
             properties-and-body (concat
-                                 (if (and no-title? (not org?)) [title])
+                                 (when (and no-title? (not org?)) [title])
                                  (if (and org? properties-in-content?)
                                    (rest body)
                                    body))

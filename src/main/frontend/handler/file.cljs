@@ -10,6 +10,7 @@
             [clojure.string :as string]
             [frontend.config :as config]
             [frontend.db :as db]
+            [frontend.db.model :as model]
             [frontend.format :as format]
             [frontend.fs :as fs]
             [frontend.fs.nfs :as nfs]
@@ -110,11 +111,13 @@
                        (set))
         keep-block-ref-f (fn [refs]
                            (filter (fn [ref]
-                                     (when (and (vector? ref)
-                                              (= :block/uuid (first ref)))
+                                     (cond
+                                       (and (vector? ref) (= :block/uuid (first ref)))
                                        (let [id (second ref)]
                                          (or (contains? block-ids id)
-                                             (db/entity [:block/uuid id]))))) refs))]
+                                             (db/entity [:block/uuid id])))
+                                       (and (map? ref) (contains? ref :block/journal?))
+                                       (db/entity [:block/name (ref :block/name)]))) refs))]
     (map (fn [item]
            (update item :block/refs keep-block-ref-f))
       data)))
@@ -345,3 +348,14 @@
             new-result (rewrite/assoc-in result ks v)]
         (let [new-content (str new-result)]
           (set-file-content! repo path new-content))))))
+
+;; TODO:
+;; (defn compare-latest-pages
+;;   []
+;;   (when-let [repo (state/get-current-repo)]
+;;     (doseq [{:block/keys [file name]} (db/get-latest-changed-pages repo)]
+;;       (when-let [path (:file/path (db/pull (:db/id file)))]
+;;         (p/let [content (load-file repo path)]
+;;           (when (not= (string/trim content) (string/trim (or (db/get-file repo path) "")))
+;;             ;; notify
+;;             ))))))

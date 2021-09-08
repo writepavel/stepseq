@@ -7,6 +7,8 @@
             [frontend.config :as config]
             [frontend.db :as db]
             [frontend.db-schema :as db-schema]
+            [frontend.error :as error]
+            [frontend.handler.command-palette :as command-palette]
             [frontend.handler.common :as common-handler]
             [frontend.handler.events :as events]
             [frontend.handler.file :as file-handler]
@@ -14,7 +16,6 @@
             [frontend.handler.page :as page-handler]
             [frontend.handler.repo :as repo-handler]
             [frontend.handler.ui :as ui-handler]
-            [frontend.handler.command-palette :as command-palette]
             [frontend.idb :as idb]
             [frontend.modules.instrumentation.core :as instrument]
             [frontend.modules.shortcut.core :as shortcut]
@@ -22,14 +23,12 @@
             [frontend.search.db :as search-db]
             [frontend.state :as state]
             [frontend.storage :as storage]
+            [frontend.ui :as ui]
             [frontend.util :as util]
-            [frontend.version :as version]
+            [frontend.util.pool :as pool]
             [goog.object :as gobj]
             [lambdaisland.glogi :as log]
-            [promesa.core :as p]
-            [frontend.ui :as ui]
-            [frontend.error :as error]
-            [frontend.util.pool :as pool]))
+            [promesa.core :as p]))
 
 (defn set-global-error-notification!
   []
@@ -209,3 +208,21 @@
 
 (defn stop! []
   (prn "stop!"))
+
+(defonce triggered? (atom false))
+(when (util/electron?)
+  (.addEventListener js/window "beforeunload"
+                     (fn [e]
+                       (when-not @triggered?
+                         (.preventDefault e)
+                         (state/pub-event! [:modal/show
+                                            [:div
+                                             [:h1.title "Reload Logseq?"]
+                                             (ui/button "YES"
+                                               :on-click (fn []
+                                                           (pool/terminate-parser-pool!)
+                                                           (p/let [_ (el/persist-dbs!)]
+                                                             (reset! triggered? true)
+                                                             (js/window.location.reload))))]])
+                         (reset! triggered? false)
+                         (set! (.-returnValue e) "")))))

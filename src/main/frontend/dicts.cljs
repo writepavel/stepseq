@@ -250,7 +250,8 @@
         :cancel "Cancel"
         :close "Close"
         :delete "Delete"
-        :re-index "Re-index"
+        :re-index "Re-index (rebuild the graph)"
+        :sync-from-local-files "Refresh (Import changes from local files)"
         :unlink "unlink"
         :search (if config/publishing?
                   "Search"
@@ -930,7 +931,9 @@
            :yes "是"
            :submit "提交"
            :cancel "取消"
+           :new-graph "添加图谱"
            :re-index "重新建立索引"
+           :sync-from-local-files "刷新（读取本地最新文件）"
            :export-json "以 JSON 格式导出"
            :export-roam-json "以 Roam JSON 格式导出"
            :export-markdown "以 Markdown 格式导出"
@@ -946,6 +949,8 @@
            :new-file "新文件"
            :graph "图谱"
            :graph-view "全局图谱"
+           :cards-view "卡片组"
+           :all-journals "日记"
            :publishing "发布"
            :export "导出"
            :all-graphs "所有库"
@@ -2167,6 +2172,7 @@
     :page/open-with-default-app "Abrir com a aplicação por omissão"
     :page/action-publish "Publicar"
     :page/make-public "Tornar pública para publicação"
+    :page/version-history "Ver histórico da página"
     :page/make-private "Tornar privada"
     :page/delete "Apagar página"
     :page/publish "Publicar esta página em Logseq"
@@ -2256,6 +2262,7 @@
     :settings-page/tab-editor "Editor"
     :settings-page/tab-shortcuts "Atalhos"
     :settings-page/tab-advanced "Avançado"
+    :settings-page/tab-version-control "Controlo de Versões"
     :logseq "Logseq"
     :on "ON"
     :more-options "Mais opções"
@@ -2330,7 +2337,8 @@
 
     :pdf/copy-ref "Copiar referência"
     :pdf/copy-text "Copiar texto"
-    :pdf/linked-ref "Referências ligadas"}
+    :pdf/linked-ref "Referências ligadas"
+    :command-palette/prompt "Introduza um comando"}
 
    :tongue/fallback :en})
 

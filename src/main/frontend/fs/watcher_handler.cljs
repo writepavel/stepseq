@@ -1,21 +1,15 @@
 (ns frontend.fs.watcher-handler
-  (:require [clojure.core.async :as async]
-            [lambdaisland.glogi :as log]
-            [frontend.handler.file :as file-handler]
-            [frontend.handler.page :as page-handler]
-            [frontend.handler.notification :as notification]
-            [frontend.handler.route :as route-handler]
-            [cljs-time.coerce :as tc]
+  (:require [clojure.string :as string]
             [frontend.config :as config]
             [frontend.db :as db]
-            [frontend.state :as state]
-            [clojure.string :as string]
-            [frontend.encrypt :as encrypt]
             [frontend.db.model :as model]
+            [frontend.encrypt :as encrypt]
             [frontend.handler.editor :as editor]
             [frontend.handler.extract :as extract]
-            [promesa.core :as p]
-            [electron.ipc :as ipc]))
+            [frontend.handler.file :as file-handler]
+            [lambdaisland.glogi :as log]
+            [electron.ipc :as ipc]
+            [promesa.core :as p]))
 
 (defn- set-missing-block-ids!
   [content]
@@ -33,37 +27,43 @@
   [type {:keys [dir path content stat] :as payload}]
   (when dir
     (let [repo (config/get-local-repo dir)
-          {:keys [mtime]} stat]
+          {:keys [mtime]} stat
+          db-content (or (db/get-file repo path) "")]
       (when (and content (not (encrypt/content-encrypted? content)))
         (cond
-          (= "add" type)
-          (when-not (db/file-exists? repo path)
-            (p/let [_ (file-handler/alter-file repo path content {:re-render-root? true
-                                                                  :from-disk? true})]
-              (set-missing-block-ids! content)
-              (db/set-file-last-modified-at! repo path mtime)
-              ;; return nil, otherwise the entire db will be transfered by ipc
-              nil))
+          (and (= "add" type)
+               (not= (string/trim content) (string/trim db-content))
+               (not (string/includes? path "logseq/pages-metadata.edn")))
+          (p/let [_ (file-handler/alter-file repo path content {:re-render-root? true
+                                                                :from-disk? true})]
+            (set-missing-block-ids! content)
+            (db/set-file-last-modified-at! repo path mtime))
 
           (and (= "change" type)
                (not (db/file-exists? repo path)))
           (js/console.warn "Can't get file in the db: " path)
 
           (and (= "change" type)
-               ;; ignore truncate
-               (not (string/blank? content))
-               (not= (string/trim content)
-                     (string/trim (or (db/get-file repo path) ""))))
-          (p/let [result (ipc/ipc "gitCommitAll" "")
+               (not= (string/trim content) (string/trim db-content))
+               (not (string/includes? path "logseq/pages-metadata.edn")))
+          (p/let [
+                  ;; save the previous content in Logseq first and commit it to avoid
+                  ;; any data-loss.
+                  _ (file-handler/alter-file repo path db-content {:re-render-root? false
+                                                                   :reset? false
+                                                                   :skip-compare? true})
+                  _ (ipc/ipc "gitCommitAll" "Save the file from Logseq's database")
                   _ (file-handler/alter-file repo path content {:re-render-root? true
-                                                                :from-disk? true})]
+                                                                :skip-compare? true})]
             (set-missing-block-ids! content)
-            (db/set-file-last-modified-at! repo path mtime)
-            nil)
+            (db/set-file-last-modified-at! repo path mtime))
 
           (contains? #{"add" "change" "unlink"} type)
           nil
 
           :else
           (log/error :fs/watcher-no-handler {:type type
-                                             :payload payload}))))))
+                                             :payload payload})))
+
+      ;; return nil, otherwise the entire db will be transfered by ipc
+      nil)))

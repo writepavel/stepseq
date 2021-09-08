@@ -1,36 +1,34 @@
 (ns frontend.handler.page
-  (:require [clojure.string :as string]
-            [frontend.db :as db]
+  (:require [cljs.reader :as reader]
+            [clojure.string :as string]
+            [clojure.walk :as walk]
             [datascript.core :as d]
-            [frontend.state :as state]
-            [frontend.util :as util :refer [profile]]
-            [frontend.util.cursor :as cursor]
-            [frontend.config :as config]
-            [frontend.handler.common :as common-handler]
-            [frontend.handler.route :as route-handler]
-            [frontend.handler.repo :as repo-handler]
-            [frontend.handler.editor :as editor-handler]
-            [frontend.handler.web.nfs :as web-nfs]
-            [frontend.handler.notification :as notification]
-            [frontend.handler.config :as config-handler]
-            [frontend.handler.ui :as ui-handler]
-            [frontend.modules.outliner.file :as outliner-file]
-            [frontend.modules.outliner.core :as outliner-core]
-            [frontend.modules.outliner.tree :as outliner-tree]
             [frontend.commands :as commands]
+            [frontend.config :as config]
             [frontend.date :as date]
+            [frontend.db :as db]
             [frontend.db-schema :as db-schema]
             [frontend.db.model :as model]
-            [clojure.walk :as walk]
-            [frontend.git :as git]
-            [frontend.fs :as fs]
-            [frontend.util.property :as property]
-            [promesa.core :as p]
-            [lambdaisland.glogi :as log]
             [frontend.format.block :as block]
-            [cljs.reader :as reader]
+            [frontend.fs :as fs]
+            [frontend.git :as git]
+            [frontend.handler.common :as common-handler]
+            [frontend.handler.editor :as editor-handler]
+            [frontend.handler.notification :as notification]
+            [frontend.handler.repo :as repo-handler]
+            [frontend.handler.route :as route-handler]
+            [frontend.handler.ui :as ui-handler]
+            [frontend.handler.web.nfs :as web-nfs]
+            [frontend.modules.outliner.core :as outliner-core]
+            [frontend.modules.outliner.file :as outliner-file]
+            [frontend.modules.outliner.tree :as outliner-tree]
+            [frontend.state :as state]
+            [frontend.util :as util]
+            [frontend.util.cursor :as cursor]
+            [frontend.util.property :as property]
             [goog.object :as gobj]
-            [clojure.data :as data]))
+            [lambdaisland.glogi :as log]
+            [promesa.core :as p]))
 
 (defn- get-directory
   [journal?]
@@ -191,43 +189,46 @@
      (map :block/body blocks))
     @plugins))
 
+(defn delete-file!
+  [repo page-name]
+  (let [file (db/get-page-file page-name)
+        file-path (:file/path file)]
+    ;; delete file
+    (when-not (string/blank? file-path)
+      (db/transact! [[:db.fn/retractEntity [:file/path file-path]]])
+      (->
+       (p/let [_ (or (config/local-db? repo) (git/remove-file repo file-path))
+               _ (fs/unlink! repo (config/get-repo-path repo file-path) nil)]
+         (common-handler/check-changed-files-status)
+         (repo-handler/push-if-auto-enabled! repo))
+       (p/catch (fn [err]
+                  (js/console.error "error: " err)))))))
+
 (defn delete!
   [page-name ok-handler]
   (when page-name
     (when-let [repo (state/get-current-repo)]
-      (let [page-name (string/lower-case page-name)]
-        (let [file (db/get-page-file page-name)
-              file-path (:file/path file)]
-          ;; delete file
-          (when-not (string/blank? file-path)
-            (db/transact! [[:db.fn/retractEntity [:file/path file-path]]])
-            (let [blocks (db/get-page-blocks page-name)
-                  tx-data (mapv
-                           (fn [block]
-                             [:db.fn/retractEntity [:block/uuid (:block/uuid block)]])
-                           blocks)]
-              (db/transact! tx-data)
-              ;; remove file
-              (->
-               (p/let [_ (or (config/local-db? repo) (git/remove-file repo file-path))
-                       _ (fs/unlink! repo (config/get-repo-path repo file-path) nil)]
-                 (common-handler/check-changed-files-status)
-                 (repo-handler/push-if-auto-enabled! repo))
-               (p/catch (fn [err]
-                          (js/console.error "error: " err))))))
+      (let [page-name (string/lower-case page-name)
+            blocks (db/get-page-blocks page-name)
+            tx-data (mapv
+                     (fn [block]
+                       [:db.fn/retractEntity [:block/uuid (:block/uuid block)]])
+                     blocks)]
+        (db/transact! tx-data)
 
+        (delete-file! repo page-name)
 
-          ;; if other page alias this pagename,
-          ;; then just remove some attrs of this entity instead of retractEntity
-          (if (model/get-alias-source-page (state/get-current-repo) page-name)
-            (when-let [id (:db/id (db/entity [:block/name page-name]))]
-              (let [txs (mapv (fn [attribute]
-                                [:db/retract id attribute])
-                              db-schema/retract-page-attributes)]
-                (db/transact! txs)))
-            (db/transact! [[:db.fn/retractEntity [:block/name page-name]]]))
+        ;; if other page alias this pagename,
+        ;; then just remove some attrs of this entity instead of retractEntity
+        (if (model/get-alias-source-page (state/get-current-repo) page-name)
+          (when-let [id (:db/id (db/entity [:block/name page-name]))]
+            (let [txs (mapv (fn [attribute]
+                              [:db/retract id attribute])
+                            db-schema/retract-page-attributes)]
+              (db/transact! txs)))
+          (db/transact! [[:db.fn/retractEntity [:block/name page-name]]]))
 
-          (ok-handler))))))
+        (ok-handler)))))
 
 (defn- compute-new-file-path
   [old-path new-page-name]

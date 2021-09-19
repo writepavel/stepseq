@@ -8,6 +8,7 @@
             [frontend.handler.route :as route-handler]
             [frontend.handler.search :as search-handler]
             [frontend.handler.ui :as ui-handler]
+            [frontend.handler.plugin :as plugin-handler]
             [frontend.modules.shortcut.before :as m]
             [frontend.state :as state]
             [frontend.util :refer [mac?]]))
@@ -128,7 +129,7 @@
      :fn      editor-handler/strike-through-format!}
     :editor/insert-link
     {:desc    "HTML Link"
-     :binding "mod+k"
+     :binding "mod+l"
      :fn      editor-handler/html-link-format!}
     :editor/move-block-up
     {:desc    "Move block up"
@@ -250,12 +251,7 @@
     :editor/redo
     {:desc    "Redo"
      :binding ["shift+mod+z" "mod+y"]
-     :fn      history/redo!}
-    ;; FIXME
-    ;; save in block editing only doesn't seems needed?
-    :editor/save
-    {:binding "mod+s"
-     :fn      editor-handler/save!}}
+     :fn      history/redo!}}
 
    :shortcut.handler/global-prevent-default
    ^{:before m/prevent-default-behavior}
@@ -277,11 +273,11 @@
      :fn      config-handler/toggle-ui-show-brackets!}
     :go/search-in-page
     {:desc    "Search in the current page"
-     :binding "mod+shift+u"
+     :binding ["mod+shift+k" "mod+shift+u"]
      :fn      #(route-handler/go-to-search! :page)}
     :go/search
     {:desc    "Full text search"
-     :binding "mod+u"
+     :binding ["mod+k" "mod+u"]
      :fn      #(route-handler/go-to-search! :global)}
     :go/journals
     {:desc    "Jump to journals"
@@ -359,6 +355,14 @@
     {:desc    "Toggle wide mode"
      :binding "t w"
      :fn      ui-handler/toggle-wide-mode!}
+    :ui/select-theme-color
+    {:desc    "Select available theme colors"
+     :binding    "t i"
+     :fn      plugin-handler/show-themes-modal!}
+    :ui/goto-plugins
+    {:desc    "Go to plugins dashboard"
+     :binding    "t p"
+     :fn      plugin-handler/goto-plugins-dashboard!}
     :editor/toggle-open-blocks
     {:desc    "Toggle open blocks (collapse or expand all blocks)"
      :binding "t o"
@@ -468,10 +472,11 @@
    ^{:doc "Others"}
    [:go/home
     :go/journals
+    :command/run
+    :command-palette/toggle
     :sidebar/clear
     :sidebar/open-today-page
     :search/re-index
-    :graph/re-index
     :auto-complete/prev
     :auto-complete/next
     :auto-complete/complete

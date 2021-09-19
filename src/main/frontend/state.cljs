@@ -138,6 +138,9 @@
       :plugin/simple-commands       {}
       :plugin/selected-theme        nil
       :plugin/selected-unpacked-pkg nil
+      :plugin/marketplace-pkgs      nil
+      :plugin/marketplace-stats     nil
+      :plugin/installing            nil
       :plugin/active-readme         nil
 
       ;; pdf
@@ -157,10 +160,14 @@
                                                  #{})
       :date-picker/date nil
 
+      :youtube/players {}
+
       ;; command palette
       :command-palette/commands []
 
-      :view/components {}})))
+      :view/components {}
+
+      :debug/write-acks {}})))
 
 
 (defn sub
@@ -687,7 +694,7 @@
               (fn [{:keys [installation_id] :as repo}]
                 (let [{:keys [token] :as m} (get tokens installation_id)]
                   (if (string? token)
-                    ;; Github API returns a expires_at key which is a timestamp (expires after 60 minutes at present),
+                    ;; GitHub API returns a expires_at key which is a timestamp (expires after 60 minutes at present),
                     ;; however, user's system time may be inaccurate. Here, based on the client system time, we use
                     ;; 40-minutes interval to deal with some critical conditions, for e.g. http request time consume.
                     (let [formatter (tf/formatters :date-time-no-ms)
@@ -960,11 +967,6 @@
    (get-saved-scroll-position js/window.location.hash))
   ([path]
    (get-in @state [:ui/paths-scroll-positions path] 0)))
-
-(defn get-journal-template
-  []
-  (when-let [repo (get-current-repo)]
-    (get-in @state [:config repo :default-templates :journals])))
 
 (defn set-today!
   [value]
@@ -1374,6 +1376,14 @@
      (when (integer? value)
        value))
    2))
+
+(defn get-linked-references-collapsed-threshold
+  []
+  (or
+   (when-let [value (:ref/linked-references-collapsed-threshold (get-config))]
+     (when (integer? value)
+       value))
+   100))
 
 (defn get-events-chan
   []

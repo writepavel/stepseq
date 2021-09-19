@@ -1218,21 +1218,14 @@
 
 (defn keyname [key] (str (namespace key) "/" (name key)))
 
-(defn batch [in max-time idle? handler]
+(defn batch [in max-time handler]
   (async/go-loop [buf [] t (async/timeout max-time)]
     (let [[v p] (async/alts! [in t])]
       (cond
-        (= p t)
+        (or (= p t) (nil? v))
         (let [timeout (async/timeout max-time)]
-          (if (idle?)
-           (do
-             (handler buf)
-             (recur [] timeout))
-           (recur buf timeout)))
-
-        (nil? v)                        ; stop
-        (when (seq buf)
-          (handler buf))
+          (handler buf)
+          (recur [] timeout))
 
         :else
         (recur (conj buf v) t)))))
@@ -1379,7 +1372,7 @@
      (let [path (string/lower-case path)]
        (not
         (some #(string/ends-with? path %)
-              [".md" ".markdown" ".org" ".edn" ".css"]))))))
+              [".md" ".markdown" ".org" ".edn" ".css" ".png" ".jpg" ".jpeg"]))))))
 
 (defn wrapped-by-quotes?
   [v]

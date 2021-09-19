@@ -4,9 +4,11 @@
             [clojure.set :as set]
             [datascript.core :as d]
             [frontend.components.diff :as diff]
+            [frontend.components.plugins :as plugin]
             [frontend.components.encryption :as encryption]
             [frontend.components.git :as git-component]
             [frontend.components.shell :as shell]
+            [frontend.components.search :as search]
             [frontend.config :as config]
             [frontend.db :as db]
             [frontend.db-schema :as db-schema]
@@ -23,7 +25,8 @@
             [frontend.util :as util]
             [rum.core :as rum]
             ["semver" :as semver]
-            [clojure.string :as string]))
+            [clojure.string :as string]
+            [frontend.modules.instrumentation.posthog :as posthog]))
 
 ;; TODO: should we move all events here?
 
@@ -138,6 +141,9 @@
 (defmethod handle :modal/show-cards [_]
   (state/set-modal! srs/global-cards))
 
+(defmethod handle :modal/show-themes-modal [_]
+  (plugin/open-select-theme!))
+
 (rum/defc modal-output
   [content]
   content)
@@ -181,6 +187,14 @@
 (defmethod handle :command/run [_]
   (when (util/electron?)
     (state/set-modal! shell/shell)))
+
+(defmethod handle :go/search [_]
+  (state/set-modal! search/search-modal
+                    {:fullscreen? false
+                     :close-btn?  false}))
+
+(defmethod handle :instrument [[_ {:keys [type payload]}]]
+  (posthog/capture type payload))
 
 (defn run!
   []

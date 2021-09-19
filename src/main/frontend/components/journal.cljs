@@ -40,7 +40,7 @@
                          (let [page-names (model/get-page-names-by-ids (map :db/id (:block/tags page)))]
                            (text/build-data-value page-names)))]
     [:div.flex-1.journal.page (cond->
-                               {:class (if intro? "intro" "")}
+                               {:class (if intro? "logseq-intro" "")}
                                 data-page-tags
                                 (assoc :data-page-tags data-page-tags))
 
@@ -49,7 +49,7 @@
         :warning
         [:p (util/format
              "Feel free to edit anything, no change will be saved at this moment. If you do want to persist your work, click the \"Open\" button to open a local directory%s."
-             (if (util/electron?) "" " or connect Logseq to Github"))]))
+             (if (util/electron?) "" " or connect Logseq to GitHub"))]))
 
      (ui/foldable
       [:a.initial-color.title.journal-title

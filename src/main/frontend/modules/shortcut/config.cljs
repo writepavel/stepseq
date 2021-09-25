@@ -1,6 +1,7 @@
 (ns frontend.modules.shortcut.config
   (:require [frontend.components.commit :as commit]
             [frontend.extensions.srs.handler :as srs]
+            [frontend.extensions.pdf.utils :as pdf-utils]
             [frontend.handler.config :as config-handler]
             [frontend.handler.editor :as editor-handler]
             [frontend.handler.history :as history]
@@ -11,7 +12,7 @@
             [frontend.handler.plugin :as plugin-handler]
             [frontend.modules.shortcut.before :as m]
             [frontend.state :as state]
-            [frontend.util :refer [mac?]]))
+            [frontend.util :refer [mac?] :as util]))
 
 ;; TODO: how to extend this for plugins usage? An atom?
 (def default-config
@@ -36,6 +37,17 @@
     {:desc    "Date picker: Select next week"
      :binding "down"
      :fn      ui-handler/shortcut-next-week}}
+
+   :shortcut.handler/pdf
+   ^{:before m/prevent-default-behavior}
+   {:pdf/previous-page
+    {:desc    "Previous page of current pdf doc"
+     :binding "ctrl+p"
+     :fn      pdf-utils/prev-page}
+    :pdf/next-page
+    {:desc    "Next page of current pdf doc"
+     :binding "ctrl+n"
+     :fn      pdf-utils/next-page}}
 
    :shortcut.handler/auto-complete
    {:auto-complete/complete
@@ -127,10 +139,6 @@
     {:desc    "Strikethrough"
      :binding "mod+shift+s"
      :fn      editor-handler/strike-through-format!}
-    :editor/insert-link
-    {:desc    "HTML Link"
-     :binding "mod+l"
-     :fn      editor-handler/html-link-format!}
     :editor/move-block-up
     {:desc    "Move block up"
      :binding (if mac? "mod+shift+up"  "alt+shift+up")
@@ -237,7 +245,7 @@
      :binding "shift+tab"
      :fn      (editor-handler/keydown-tab-handler :left)}
     :editor/copy
-    {:desc    "Copy"
+    {:desc    "Copy (copies either selection, or block reference)"
      :binding "mod+c"
      :fn      editor-handler/shortcut-copy}
     :editor/cut
@@ -255,7 +263,11 @@
 
    :shortcut.handler/global-prevent-default
    ^{:before m/prevent-default-behavior}
-   {:editor/select-all-blocks
+   {:editor/insert-link
+    {:desc    "HTML Link"
+     :binding "mod+l"
+     :fn      editor-handler/html-link-format!}
+    :editor/select-all-blocks
     {:desc    "Select all blocks"
      :binding "mod+shift+a"
      :fn      editor-handler/select-all-blocks!}

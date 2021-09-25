@@ -54,6 +54,7 @@
   []
   (try
     (let [graph-path (get-graph-path)
+          _ (and (string/blank? graph-path) (throw (js/Error. "Empty graph path")))
           p (.join path graph-path ".git")]
       (when (and (fs/existsSync p)
                  (.isFile (fs/statSync p)))
@@ -116,7 +117,7 @@
                    (if (string/starts-with? error "Author identity unknown")
                      (utils/send-to-renderer "setGitUsernameAndEmail" {:type "git"})
                      (utils/send-to-renderer "notification" {:type "error"
-                                                             :payload error})))))))))
+                                                             :payload (str error "\nIf you don't want to see those errors or don't need git, you can disable the \"Git auto commit\" feature on Settings > Version control.")})))))))))
 
 (defonce quotes-regex #"\"[^\"]+\"")
 (defn wrapped-by-quotes?

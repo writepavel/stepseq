@@ -1076,8 +1076,10 @@
         [:div.dsl-query
          (let [query (string/join ", " arguments)]
            (custom-query (assoc config :dsl-query? true)
-                         {:title [:span.font-medium.px-2.py-1.query-title.text-sm.rounded-md.shadow-xs
-                                  (str "Query: " query)]
+                         {:title (ui/tippy {:html commands/query-doc
+                                            :interactive true}
+                                  [:span.font-medium.px-2.py-1.query-title.text-sm.rounded-md.shadow-xs
+                                   (str "Query: " query)])
                           :query query}))]
 
         (= name "function")
@@ -1452,35 +1454,22 @@
                 :checked checked?}))
 
 (defn marker-switch
-  [{:block/keys [pre-block? marker] :as block}]
+  [{:block/keys [marker] :as block}]
   (when (contains? #{"NOW" "LATER" "TODO" "DOING"} marker)
     (let [set-marker-fn (fn [marker]
                           (fn [e]
                             (util/stop e)
-                            (editor-handler/set-marker block marker)))]
-      (case marker
-        "NOW"
-        [:a.marker-switch.block-marker
-         {:title "Change from NOW to LATER"
-          :on-click (set-marker-fn "LATER")}
-         "NOW"]
-        "LATER"
-        [:a.marker-switch.block-marker
-         {:title "Change from LATER to NOW"
-          :on-click (set-marker-fn "NOW")}
-         "LATER"]
-
-        "TODO"
-        [:a.marker-switch.block-marker
-         {:title "Change from TODO to DOING"
-          :on-click (set-marker-fn "DOING")}
-         "TODO"]
-        "DOING"
-        [:a.marker-switch.block-marker
-         {:title "Change from DOING to TODO"
-          :on-click (set-marker-fn "TODO")}
-         "DOING"]
-        nil))))
+                            (editor-handler/set-marker block marker)))
+          next-marker (case marker
+                        "NOW" "LATER"
+                        "LATER" "NOW"
+                        "TODO" "DOING"
+                        "DOING" "TODO")]
+      [:a
+       {:class (str "marker-switch block-marker " marker)
+        :title (util/format "Change from %s to %s" marker next-marker)
+        :on-click (set-marker-fn next-marker)}
+       marker])))
 
 (defn marker-cp
   [{:block/keys [pre-block? marker] :as block}]
@@ -1787,7 +1776,13 @@
                 (assoc mouse-down-key (fn [e]
                                         (block-content-on-mouse-down e block block-id properties content format edit-input-id))))]
     [:div.block-content.inline
-     (cond-> {:id (str "block-content-" uuid)}
+     (cond-> {:id (str "block-content-" uuid)
+              :on-mouse-up (fn [_e]
+                             (when (and
+                                    (state/in-selection-mode?)
+                                    (not (string/includes? content "```")))
+                               ;; clear highlighted text
+                               (util/clear-selection!)))}
        (not slide?)
        (merge attrs))
 
@@ -2303,7 +2298,7 @@
                          (and (util/electron?) (string? result)) ; full-text search
                          (if (string/blank? result)
                            (atom [])
-                           (p/let [blocks (search/block-search repo result {:limit 30})]
+                           (p/let [blocks (search/block-search repo (string/trim result) {:limit 30})]
                              (when (seq blocks)
                                (let [result (db/pull-many (state/get-current-repo) '[*] (map (fn [b] [:block/uuid (uuid (:block/uuid b))]) blocks))]
                                  (reset! result-atom result)))))
@@ -2350,6 +2345,7 @@
            transformed-query-result (when query-result
                                       (db/custom-query-result-transform query-result remove-blocks q))
            not-grouped-by-page? (or table?
+                                    (boolean (:result-transform q))
                                     (and (string? query) (string/includes? query "(by-page false)")))
            result (if (and (:block/uuid (first transformed-query-result)) (not not-grouped-by-page?))
                     (db-utils/group-by-page transformed-query-result)
@@ -2775,7 +2771,8 @@
    (cond-> option
      (:document/mode? config) (assoc :class "doc-mode"))
    (cond
-     (:custom-query? config)
+     (and (:custom-query? config)
+          (:group-by-page? config))
      [:div.flex.flex-col
       (let [blocks (sort-by (comp :block/journal-day first) > blocks)]
         (for [[page blocks] blocks]

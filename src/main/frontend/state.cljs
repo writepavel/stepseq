@@ -61,7 +61,7 @@
       :ui/fullscreen? false
       :ui/settings-open? false
       :ui/sidebar-open? false
-      :ui/left-sidebar-open? false
+      :ui/left-sidebar-open? (boolean (storage/get "ls-left-sidebar-open?"))
       :ui/theme (or (storage/get :ui/theme) "dark")
       :ui/system-theme? ((fnil identity (or util/mac? util/win32? false)) (storage/get :ui/system-theme?))
       :ui/wide-mode? false
@@ -102,6 +102,8 @@
       :editor/last-input-time nil
       :editor/document-mode? document-mode?
       :editor/args nil
+      :editor/on-paste? false
+
       :db/last-transact-time {}
       :db/last-persist-transact-ids {}
       ;; whether database is persisted
@@ -125,6 +127,7 @@
       :preferred-language (storage/get :preferred-language)
 
       ;; electron
+      :electron/auto-updater-downloaded false
       :electron/updater-pending? false
       :electron/updater {}
       :electron/user-cfgs nil
@@ -169,7 +172,13 @@
 
       :debug/write-acks {}
 
-      :encryption/graph-parsing? false})))
+      :encryption/graph-parsing? false
+
+      :favorites/dragging nil
+
+      :srs/mode? false
+
+      :srs/cards-due-count nil})))
 
 
 (defn sub
@@ -242,6 +251,10 @@
 (defn get-custom-css-link
   []
   (:custom-css-url (get-config)))
+
+(defn get-custom-js-link
+  []
+  (:custom-js-url (get-config)))
 
 (defn get-default-journal-template
   []
@@ -740,7 +753,6 @@
     (update-state! :sidebar/blocks (fn [blocks]
                                      (->> (remove #(= (second %) db-id) blocks)
                                           (cons [repo db-id block-type block-data])
-                                        ; FIXME: No need to call `distinct`?
                                           (distinct))))
     (open-right-sidebar!)
     (when-let [elem (gdom/getElementByClass "cp__right-sidebar-scrollable")]
@@ -1115,6 +1127,7 @@
 
 (defn set-left-sidebar-open!
   [value]
+  (storage/set "ls-left-sidebar-open?" (boolean value))
   (set-state! :ui/left-sidebar-open? value))
 
 (defn set-developer-mode!
@@ -1147,9 +1160,11 @@
 
 (defn enable-tooltip?
   []
-  (get (get (sub-config) (get-current-repo))
-       :ui/enable-tooltip?
-       true))
+  (if (util/mobile?)
+    false
+    (get (get (sub-config) (get-current-repo))
+        :ui/enable-tooltip?
+        true)))
 
 (defn show-command-doc?
   []

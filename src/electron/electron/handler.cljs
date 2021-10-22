@@ -1,5 +1,5 @@
 (ns electron.handler
-  (:require ["electron" :refer [ipcMain dialog app]]
+  (:require ["electron" :refer [ipcMain dialog app autoUpdater]]
             [cljs-bean.core :as bean]
             ["fs" :as fs]
             ["buffer" :as buffer]
@@ -61,7 +61,8 @@
                       (string/replace "\\" "_"))
         bak-dir (str repo "/logseq/bak")
         _ (fs-extra/ensureDirSync bak-dir)
-        new-path (str bak-dir "/" file-name "." (.toISOString (js/Date.)))]
+        new-path (str bak-dir "/" file-name "."
+                      (string/replace (.toISOString (js/Date.)) ":" "_"))]
     (fs/writeFileSync new-path db-content)
     (fs/statSync new-path)))
 
@@ -89,7 +90,7 @@
   (fs/statSync path))
 
 (defonce allowed-formats
-         #{:org :markdown :md :edn :json :css :excalidraw})
+         #{:org :markdown :md :edn :json :js :css :excalidraw})
 
 (defn get-ext
   [p]
@@ -218,6 +219,9 @@
 
 (defmethod handle :uninstallMarketPlugin [_ [_ id]]
   (plugin/uninstall! id))
+
+(defmethod handle :quitAndInstall []
+  (.quitAndInstall autoUpdater))
 
 (defmethod handle :default [args]
   (println "Error: no ipc handler for: " (bean/->js args)))

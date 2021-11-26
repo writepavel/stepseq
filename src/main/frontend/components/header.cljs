@@ -3,6 +3,7 @@
             [frontend.components.plugins :as plugins]
             [frontend.components.repo :as repo]
             [frontend.components.page :as page]
+            [clojure.string :as str]
             [frontend.components.page-menu :as page-menu]
             [frontend.components.right-sidebar :as sidebar]
             [frontend.components.search :as search]
@@ -22,14 +23,15 @@
             [cljs-bean.core :as bean]
             [reitit.frontend.easy :as rfe]
             [rum.core :as rum]
-            [frontend.mobile.util :as mobile-util]))
+            [frontend.mobile.util :as mobile-util]
+            [frontend.components.widgets :as widgets]))
 
-(rum/defc home-button
-  []
-  [:a.button
-   {:href     (rfe/href :home)
-    :on-click route-handler/go-to-journals!}
-   (ui/icon "home" {:style {:fontSize 20}})])
+(rum/defc home-button []
+  (ui/with-shortcut :go/home "left"
+    [:a.button
+     {:href     (rfe/href :home)
+      :on-click route-handler/go-to-journals!}
+     (ui/icon "home" {:style {:fontSize 20}})]))
 
 (rum/defc login
   [logged?]
@@ -56,22 +58,11 @@
 
 (rum/defc left-menu-button < rum/reactive
   [{:keys [on-click]}]
-  (let [left-sidebar-open? (state/sub :ui/left-sidebar-open?)]
-
-    (ui/tippy
-      {:html [:div.text-sm.font-medium
-              "Shortcut: "
-              [:code (util/->platform-shortcut "t l")]]
-       :delay 2000
-       :hideDelay 1
-       :position "right"
-       :interactive true
-       :arrow true}
-
-      [:a#left-menu.cp__header-left-menu.button
-       {:on-click on-click
-        :style {:margin-left 12}}
-       (ui/icon "menu-2" {:style {:fontSize 20}})])))
+  (ui/with-shortcut :ui/toggle-left-sidebar "bottom"
+    [:a#left-menu.cp__header-left-menu.button
+     {:on-click on-click
+      :style {:margin-left 12}}
+     (ui/icon "menu-2" {:style {:fontSize 20}})]))
 
 (rum/defc dropdown-menu < rum/reactive
   [{:keys [me current-repo t default-home]}]
@@ -122,6 +113,7 @@
           :icon svg/logout-sm})]
       (concat page-menu-and-hr)
       (remove nil?))
+     {}
      ;; {:links-footer (when (and (util/electron?) (not logged?))
      ;;                  [:div.px-2.py-2 (login logged?)])}
      )))
@@ -129,12 +121,16 @@
 (rum/defc back-and-forward
   []
   [:div.flex.flex-row
-   [:a.it.navigation.nav-left.button
-    {:title "Go Back" :on-click #(js/window.history.back)}
-    (ui/icon "arrow-left")]
-   [:a.it.navigation.nav-right.button
-    {:title "Go Forward" :on-click #(js/window.history.forward)}
-    (ui/icon "arrow-right")]])
+
+   (ui/with-shortcut :go/backward "bottom"
+     [:a.it.navigation.nav-left.button
+      {:title "Go back" :on-click #(js/window.history.back)}
+      (ui/icon "arrow-left")])
+
+   (ui/with-shortcut :go/forward "bottom"
+     [:a.it.navigation.nav-right.button
+      {:title "Go forward" :on-click #(js/window.history.forward)}
+      (ui/icon "arrow-right")])])
 
 (rum/defc updater-tips-new-version
   [t]
@@ -184,16 +180,8 @@
                                        (state/set-left-sidebar-open!
                                          (not (:ui/left-sidebar-open? @state/state))))})
 
-        (when current-repo
-          (ui/tippy
-            {:html        [:div.text-sm.font-medium
-                           "Shortcut: "
-                           ;; TODO: Pull from config so it displays custom shortcut, not just the default
-                           [:code (util/->platform-shortcut "Ctrl + k")]]
-             :interactive true
-             :delay       2000
-             :position    "right"
-             :arrow       true}
+        (when current-repo ;; this is for the Search button
+          (ui/with-shortcut :go/search "right"
             [:a.button#search-button
              {:on-click #(state/pub-event! [:go/search])}
              (ui/icon "search" {:style {:fontSize 20}})]))]
@@ -224,7 +212,7 @@
           [:a.text-sm.font-medium.button
            {:on-click #(page-handler/ls-dir-files! shortcut/refresh!)}
            [:div.flex.flex-row.text-center.open-button__inner.items-center
-            [:span.inline-block.open-button__icon-wrapper svg/folder-add]
+            (ui/icon "folder-plus")
             (when-not config/mobile?
               [:span.ml-1 {:style {:margin-top (if electron-mac? 0 2)}}
                (t :open)])]])

@@ -23,6 +23,8 @@
             [frontend.handler.plugin :as plugin-handler]
             [frontend.modules.outliner.core :as outliner]
             [frontend.modules.outliner.tree :as outliner-tree]
+            [frontend.handler.command-palette :as palette-handler]
+            [frontend.modules.shortcut.core :as st]
             [electron.listener :as el]
             [frontend.state :as state]
             [frontend.util :as util]
@@ -32,7 +34,8 @@
             [medley.core :as medley]
             [promesa.core :as p]
             [reitit.frontend.easy :as rfe]
-            [sci.core :as sci]))
+            [sci.core :as sci]
+            [frontend.modules.layout.core]))
 
 ;; helpers
 (defn- normalize-keyword-for-json
@@ -227,10 +230,43 @@
                               (rest %)) actions)]))))
 
 (def ^:export register_plugin_simple_command
-  (fn [pid ^js cmd-action]
+  (fn [pid ^js cmd-action palette?]
     (when-let [[cmd action] (bean/->clj cmd-action)]
-      (plugin-handler/register-plugin-simple-command
-        pid cmd (assoc action 0 (keyword (first action)))))))
+      (let [action (assoc action 0 (keyword (first action)))
+            key (:key cmd)
+            keybinding (:keybinding cmd)
+            palette-cmd (and palette? (plugin-handler/simple-cmd->palette-cmd pid cmd action))]
+
+        ;; handle simple commands
+        (plugin-handler/register-plugin-simple-command pid cmd action)
+
+        ;; handle palette commands
+        (when palette-cmd
+          (palette-handler/register palette-cmd))
+
+        ;; handle keybinding commands
+        (when-let [shortcut-args (and palette-cmd keybinding
+                                      (plugin-handler/simple-cmd-keybinding->shortcut-args pid key keybinding))]
+          (let [dispatch-cmd (fn [_ e] (palette-handler/invoke-command palette-cmd))
+                [handler-id id shortcut-map] (update shortcut-args 2 assoc :fn dispatch-cmd)]
+            (js/console.debug :shortcut/register-shortcut [handler-id id shortcut-map])
+            (st/register-shortcut! handler-id id shortcut-map)))))))
+
+(defn ^:export unregister_plugin_simple_command
+  [pid]
+  ;; remove simple commands
+  (plugin-handler/unregister-plugin-simple-command pid)
+
+  ;; remove palette commands
+  (let [palette-matched (->> (palette-handler/get-commands)
+                             (filter #(string/includes? (str (:id %)) (str "plugin." pid))))]
+    (when (seq palette-matched)
+      (doseq [cmd palette-matched]
+        (palette-handler/unregister (:id cmd))
+        ;; remove keybinding commands
+        (when (seq (:shortcut cmd))
+          (js/console.debug :shortcut/unregister-shortcut cmd)
+          (st/unregister-shortcut! (:handler-id cmd) (:id cmd)))))))
 
 (def ^:export register_plugin_ui_item
   (fn [pid type ^js opts]
@@ -251,6 +287,22 @@
   (fn [url]
     (when (re-find #"https?://" url)
       (js/apis.openExternal url))))
+
+;; flag - boolean | 'toggle'
+(def ^:export set_left_sidebar_visible
+  (fn [flag]
+    (if (= flag "toggle")
+      (state/toggle-left-sidebar!)
+      (state/set-state! :ui/left-sidebar-open? (boolean flag)))
+    nil))
+
+;; flag - boolean | 'toggle'
+(def ^:export set_right_sidebar_visible
+  (fn [flag]
+    (if (= flag "toggle")
+      (state/toggle-sidebar-open?!)
+      (state/set-state! :ui/sidebar-open? (boolean flag)))
+    nil))
 
 (def ^:export push_state
   (fn [^js k ^js params ^js query]
@@ -328,10 +380,11 @@
     (some-> (if-let [page (db-model/get-page name)]
               page
               (let [properties (bean/->clj properties)
-                    {:keys [redirect createFirstBlock format]} (bean/->clj opts)
+                    {:keys [redirect createFirstBlock format journal]} (bean/->clj opts)
                     name (page-handler/create!
                            name
                            {:redirect?           (if (boolean? redirect) redirect true)
+                            :journal?            journal
                             :create-first-block? (if (boolean? createFirstBlock) createFirstBlock true)
                             :format              format
                             :properties          properties})]
@@ -348,11 +401,15 @@
 (def ^:export rename_page
   page-handler/rename!)
 
+(defn ^:export open_in_right_sidebar
+  [block-uuid]
+  (editor-handler/open-block-in-sidebar! (medley/uuid block-uuid)))
+
 (def ^:export edit_block
   (fn [block-uuid {:keys [pos] :or {pos :max} :as opts}]
     (when-let [block-uuid (and block-uuid (medley/uuid block-uuid))]
       (when-let [block (db-model/query-block-by-uuid block-uuid)]
-        (editor-handler/edit-block! block pos nil block-uuid)))))
+        (editor-handler/edit-block! block pos block-uuid)))))
 
 (def ^:export insert_block
   (fn [block-uuid-or-page-name content ^js opts]
@@ -522,6 +579,11 @@
   ([content status] (let [hiccup? (and (string? content) (string/starts-with? (string/triml content) "[:"))
                           content (if hiccup? (parse-hiccup-ui content) content)]
                       (notification/show! content (keyword status)))))
+
+(defn ^:export query_element_by_id
+  [id]
+  (let [^js el (gdom/getElement id)]
+    (if el (str (.-tagName el) "#" id) false)))
 
 (defn ^:export force_save_graph
   []

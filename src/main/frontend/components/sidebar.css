@@ -19,6 +19,7 @@
 
 #main-container {
   position: relative;
+  height: 100%;
 }
 
 #main-content {
@@ -68,6 +69,15 @@
   }
 }
 
+.ls-mobile-left-sidebar {
+  position: relative;
+  z-index: -1;
+
+  &.is-left-sidebar-open {
+    z-index: var(--ls-z-index-level-3);
+  }
+}
+
 .left-sidebar-inner {
   position: relative;
   height: 100%;
@@ -93,13 +103,13 @@
   .nav-content-item {
     padding: 32px 0 0 0;
 
-    > .hd {
+    > .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       user-select: none;
       cursor: pointer;
-      padding: 0 18px;
+      padding: 4px 18px;
 
       > span {
         > a {
@@ -115,12 +125,18 @@
           &:last-child {
             transform: translateY(-6px) translateX(2px) rotate(90deg);
             transform-origin: center center;
-            transition: .25s transform;
+            transition: .15s transform;
           }
         }
       }
 
       &:hover {
+        background-color: var(--ls-tertiary-background-color);
+
+        * {
+          opacity: 1 !important;
+        }
+
         > span {
           > a {
             display: block;
@@ -167,7 +183,7 @@
     }
 
     &.is-expand {
-      > .hd > span > a {
+      > .header > span > a {
         &:last-child {
           transform: translateY(2px) translateX(-3px);
         }
@@ -363,10 +379,6 @@
 
 .cp__sidebar-main-content[data-is-global-graph-pages='true'] {
   padding: 0;
-}
-
-.scrollbar-spacing {
-  height: 100%;
 }
 
 @supports not (overflow-y: overlay) {

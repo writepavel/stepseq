@@ -157,7 +157,12 @@
                    (p/let [delete-blocks (db/delete-file-blocks! repo-url file)
                            [pages blocks] (extract-handler/extract-blocks-pages repo-url file content utf8-content)
                            _ (when-let [current-file (page-exists-in-another-file (first pages) file)]
-                               (p/rejected (str "Page already exists with another file: " current-file)))
+                               (when (not= file current-file)
+                                 (let [error (str "Page already exists with another file: " current-file ", current file: " file)]
+                                   (state/pub-event! [:notification/show
+                                                      {:content error
+                                                       :status :error
+                                                       :clear? false}]))))
                            blocks (remove-non-exists-refs! blocks)
                            block-ids (map (fn [block] {:block/uuid (:block/uuid block)}) blocks)
                            pages (extract-handler/with-ref-pages pages blocks)]
@@ -249,20 +254,28 @@
 (defn alter-files-handler!
   [repo files {:keys [finish-handler chan]} file->content]
   (let [write-file-f (fn [[path content]]
-                       (let [original-content (get file->content path)]
-                         (-> (p/let [_ (or
-                                        (util/electron?)
-                                        (nfs/check-directory-permission! repo))]
-                               (debug/set-ack-step! path :write-file)
-                               (fs/write-file! repo (config/get-repo-dir repo) path content
-                                               {:old-content original-content}))
-                             (p/catch (fn [error]
-                                        (state/pub-event! [:instrument {:type :write-file/failed
-                                                                        :payload {:path path
-                                                                                  :error (str error)}}])
-                                        (log/error :write-file/failed {:path path
-                                                                       :content content
-                                                                       :error error}))))))
+                       (when path
+                         (let [original-content (get file->content path)]
+                          (-> (p/let [_ (or
+                                         (util/electron?)
+                                         (nfs/check-directory-permission! repo))]
+                                (debug/set-ack-step! path :write-file)
+                                (fs/write-file! repo (config/get-repo-dir repo) path content
+                                                {:old-content original-content}))
+                              (p/catch (fn [error]
+                                         (state/pub-event! [:notification/show
+                                                            {:content (str "Failed to save the file " path ". Error: "
+                                                                           (str error))
+                                                             :status :error
+                                                             :clear? false}])
+                                         (state/pub-event! [:instrument {:type :write-file/failed
+                                                                         :payload {:path path
+                                                                                   :content-length (count content)
+                                                                                   :error-str (str error)
+                                                                                   :error error}}])
+                                         (log/error :write-file/failed {:path path
+                                                                        :content content
+                                                                        :error error})))))))
         finish-handler (fn []
                          (when finish-handler
                            (finish-handler))
@@ -310,10 +323,7 @@
         (try
           (<p! (apply alter-files-handler! args))
           (catch js/Error e
-            (log/error :file/write-failed e)
-            (state/pub-event! [:instrument {:type :debug/write-failed
-                                            :payload {:step :start-to-write
-                                                      :error e}}]))))
+            (log/error :file/write-failed e))))
       (recur))
     chan))
 
@@ -353,6 +363,7 @@
   [path k v]
   (when-let [repo (state/get-current-repo)]
     (when-let [content (db/get-file-no-sub path)]
+      (common-handler/read-config content)
       (let [result (try
                      (rewrite/parse-string content)
                      (catch js/Error e

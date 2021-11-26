@@ -433,7 +433,7 @@
    card-index]
   (let [cards (map ->card blocks)
         review-records (::review-records state)
-        card (util/nth-safe cards @card-index)]
+        card (when card-index (util/nth-safe cards @card-index))]
     (if-not card
       review-finished
       (let [phase (::phase state)
@@ -444,27 +444,28 @@
          {:class (when (or preview? modal?)
                    (util/hiccup->class ".flex.flex-col.resize.overflow-y-auto"))}
          (let [repo (state/get-current-repo)]
-           [:div.my-2.opacity-70.hover:opacity-100
+           [:div {:style {:margin-top 20}}
             (component-block/block-parents {} repo root-block-id {})])
          (component-block/blocks-container
           blocks
           (merge (show-cycle-config card @phase)
                  {:id (str root-block-id)
-                  :editor-box editor/box}))
+                  :editor-box editor/box
+                  :review-cards? true}))
          (if (or preview? modal?)
            [:div.flex.my-4.justify-between
             [:div.flex-1
              (when-not (and (not preview?) (= next-phase 1))
                (ui/button (case next-phase
-                            1 [:span "Hide answers " (ui/keyboard-shortcut [:s])]
-                            2 [:span "Show answers " (ui/keyboard-shortcut [:s])]
-                            3 [:span "Show clozes " (ui/keyboard-shortcut [:s])])
+                            1 [:span "Hide answers " (ui/render-keyboard-shortcut [:s])]
+                            2 [:span "Show answers " (ui/render-keyboard-shortcut [:s])]
+                            3 [:span "Show clozes " (ui/render-keyboard-shortcut [:s])])
                           :id "card-answers"
                           :class "mr-2"
                  :on-click #(reset! phase next-phase)))
 
              (when (and (> (count cards) 1) preview?)
-               (ui/button [:span "Next " (ui/keyboard-shortcut [:n])]
+               (ui/button [:span "Next " (ui/render-keyboard-shortcut [:n])]
                           :id "card-next"
                           :class "mr-2"
                  :on-click #(skip-card card card-index cards phase review-records cb)))
@@ -476,7 +477,7 @@
                  [:div.flex.flex-row.justify-between
                   (ui/button (if (util/mobile?)
                                "Forgotten"
-                               [:span "Forgotten " (ui/keyboard-shortcut [:f])])
+                               [:span "Forgotten " (ui/render-keyboard-shortcut [:f])])
                     :id "card-forgotten"
                     :on-click (fn []
                                 (score-and-next-card 1 card card-index cards phase review-records cb)
@@ -485,13 +486,13 @@
 
                   (ui/button (if (util/mobile?)
                                  "Remembered"
-                                 [:span "Remembered " (ui/keyboard-shortcut [:r])])
+                                 [:span "Remembered " (ui/render-keyboard-shortcut [:r])])
                     :id "card-remembered"
                     :on-click #(score-and-next-card 5 card card-index cards phase review-records cb))
 
                   (ui/button (if (util/mobile?)
                                "Hard"
-                               [:span "Took a while to recall " (ui/keyboard-shortcut [:t])])
+                               [:span "Took a while to recall " (ui/render-keyboard-shortcut [:t])])
                     :id "card-recall"
                     :on-click #(score-and-next-card 3 card card-index cards phase review-records cb))]))]
 
@@ -505,9 +506,7 @@
                                    :class (util/hiccup->class "opacity-60.hover:opacity-100")
                                    :small? true
                                    :on-click #(operation-reset! card))))]
-           [:div.my-4
-            (ui/button "Review cards"
-                       :small? true)])]))))
+           [:div.my-3 (ui/button "Review cards" :small? true)])]))))
 
 (rum/defc view-modal <
   (shortcut/mixin :shortcut.handler/cards)
@@ -516,7 +515,7 @@
 
 (defn preview
   [blocks]
-  (state/set-modal! #(view blocks {:preview? true})))
+  (state/set-modal! #(view blocks {:preview? true} (atom 0))))
 
 
 ;;; ================================================================
@@ -572,7 +571,8 @@
   (let [repo (state/get-current-repo)
         query-string (:query-string state)
         card-index (::card-index state)
-        query-result (:query-result state)]
+        query-result (:query-result state)
+        global? (:global? config)]
     (if (seq query-result)
       (let [{:keys [total result]} (query-scheduled repo query-result (tl/local-now))
             review-cards result
@@ -580,11 +580,13 @@
             card-query-block (db/entity [:block/uuid (:block/uuid config)])
             filtered-total (count result)
             modal? (:modal? config)]
-        [:div.flex-1 {:style (when modal? {:height "100%"})}
+        [:div.flex-1.cards-review {:style (when modal? {:height "100%"})
+                                   :class (if global? "" "shadow-xl")}
          [:div.flex.flex-row.items-center.justify-between.cards-title
-          [:div
-           [:span.text-sm [:span.font-bold "🗂️"]
-            (str ": " query-string)]]
+          [:div.flex.flex-row.items-center
+           (ui/icon "infinity" {:style {:font-size 20}})
+           [:div.ml-1.text-sm.font-medium query-string]]
+
 
           [:div.flex.flex-row.items-center
 
@@ -592,7 +594,7 @@
            (ui/tippy {:html [:div.text-sm "overdue/total"]
                       ;; :class "tippy-hover"
                       :interactive true}
-                     [:div.opacity-60.text-sm
+                     [:div.opacity-60.text-sm.mr-3
                       (let [idx (- filtered-total @card-index)]
                         (max idx 0))
                       [:span "/"]
@@ -604,8 +606,9 @@
              :class "tippy-hover"
              :interactive true
              :disabled false}
-            [:a.opacity-60.hover:opacity-100.svg-small.inline.ml-3.font-bold
-             {:on-click (fn [_]
+            [:a.opacity-60.hover:opacity-100.svg-small.inline.font-bold
+             {:id "preview-all-cards"
+              :on-click (fn [_]
                           (let [blocks query-result]
                             (when (> (count blocks) 0)
                               (state/set-modal! #(view-modal
@@ -614,17 +617,18 @@
                                                   card-index)))))}
              "A"])]]
          (if (seq review-cards)
-           [:div (when-not modal?
-                   {:on-click (fn []
-                                (state/set-modal! #(view-modal
-                                                    review-cards
-                                                    {:modal? true
-                                                     :callback
-                                                     (fn [review-records]
-                                                       (operation-card-info-summary!
-                                                        review-records review-cards card-query-block)
-                                                       (persist-var/persist-save of-matrix))}
-                                                    card-index)))})
+           [:div.px-1
+            (when-not modal?
+              {:on-click (fn []
+                           (state/set-modal! #(view-modal
+                                               review-cards
+                                               {:modal? true
+                                                :callback
+                                                (fn [review-records]
+                                                  (operation-card-info-summary!
+                                                   review-records review-cards card-query-block)
+                                                  (persist-var/persist-save of-matrix))}
+                                               card-index)))})
             (let [view-fn (if modal? view-modal view)]
               (view-fn review-cards
                        (merge config
@@ -635,10 +639,9 @@
                                  (persist-var/persist-save of-matrix))})
                        card-index))]
            review-finished)])
-
-      (if (zero? @cards-total)
+      (if global?
         [:div.ls-card
-         [:h1.title "Time to create your first card!"]
+         [:h1.title "Time to create a card!"]
 
          [:div
           [:p "You can add \"#card\" to any block to turn it into a card or trigger \"/cloze\" to add some clozes."]

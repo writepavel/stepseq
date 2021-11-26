@@ -9,16 +9,25 @@
             [frontend.state :as state]
             [frontend.ui.date-picker]
             [frontend.util :as util]
+            [frontend.util.cursor :as cursor]
+            [frontend.handler.plugin :as plugin-handler]
+            [cljs-bean.core :as bean]
             [goog.dom :as gdom]
+            [frontend.modules.shortcut.config :as shortcut-config]
+            [frontend.modules.shortcut.data-helper :as shortcut-helper]
+            [promesa.core :as p]
             [goog.object :as gobj]
             [lambdaisland.glogi :as log]
             [medley.core :as medley]
+            [electron.ipc :as ipc]
             ["react-resize-context" :as Resize]
             ["react-textarea-autosize" :as TextareaAutosize]
             ["react-tippy" :as react-tippy]
             ["react-transition-group" :refer [CSSTransition TransitionGroup]]
             ["react-tweet-embed" :as react-tweet-embed]
-            [rum.core :as rum]))
+            [rum.core :as rum]
+            [clojure.string :as str]
+            [frontend.db-mixins :as db-mixins]))
 
 (defonce transition-group (r/adapt-class TransitionGroup))
 (defonce css-transition (r/adapt-class CSSTransition))
@@ -28,7 +37,21 @@
 (def Tippy (r/adapt-class (gobj/get react-tippy "Tooltip")))
 (def ReactTweetEmbed (r/adapt-class react-tweet-embed))
 
-(rum/defc ls-textarea < rum/reactive
+(rum/defc ls-textarea
+  < rum/reactive
+  {:did-mount (fn [state]
+                (let [^js el (rum/dom-node state)]
+                  (. el addEventListener "mouseup"
+                     #(let [start (.-selectionStart el)
+                            end (.-selectionEnd el)]
+                        (when-let [e (and (not= start end)
+                                          {:caret (cursor/get-caret-pos el)
+                                           :start start :end end
+                                           :text  (. (.-value el) substring start end)
+                                           :point {:x (.-x %) :y (.-y %)}})]
+
+                          (plugin-handler/hook-plugin-editor :input-selection-end (bean/->js e))))))
+                state)}
   [{:keys [on-change] :as props}]
   (let [skip-composition? (or
                            (state/sub :editor/show-page-search?)
@@ -169,8 +192,7 @@
        {:style {:z-index (if (or (= state "exiting")
                                  (= state "exited"))
                            -1
-                           99)
-                :top     "3.2em"}}
+                           99)}}
        [:div.max-w-sm.w-full.shadow-lg.rounded-lg.pointer-events-auto.notification-area
         {:class (case state
                   "entering" "transition ease-out duration-300 transform opacity-0 translate-y-2 sm:translate-x-0"
@@ -243,7 +265,7 @@
 
 (defn inject-document-devices-envs!
   []
-  (let [cl (.-classList js/document.documentElement)]
+  (let [^js cl (.-classList js/document.documentElement)]
     (when util/mac? (.add cl "is-mac"))
     (when util/win32? (.add cl "is-win32"))
     (when (util/electron?) (.add cl "is-electron"))
@@ -251,7 +273,9 @@
     (when (util/mobile?) (.add cl "is-mobile"))
     (when (util/safari?) (.add cl "is-safari"))
     (when (util/electron?)
-      (js/window.apis.on "full-screen" #(js-invoke cl (if (= % "enter") "add" "remove") "is-fullscreen")))))
+      (js/window.apis.on "full-screen" #(js-invoke cl (if (= % "enter") "add" "remove") "is-fullscreen"))
+      (p/then (ipc/ipc :getAppBaseInfo) #(let [{:keys [isFullScreen]} (js->clj % :keywordize-keys true)]
+                                           (and isFullScreen (.add cl "is-fullscreen")))))))
 
 (defn inject-dynamic-style-node!
   []
@@ -304,11 +328,13 @@
 
 (defn setup-active-keystroke! []
   (let [active-keystroke (atom #{})
+        heads #{:shift :alt :meta :control}
         handle-global-keystroke (fn [down? e]
                                   (let [handler (if down? conj disj)
                                         keystroke e.key]
                                     (swap! active-keystroke handler keystroke))
-                                  (set-global-active-keystroke (apply str (interpose "+" (vec @active-keystroke)))))
+                                  (when (contains? heads (keyword (util/safe-lower-case e.key)))
+                                    (set-global-active-keystroke (str/join "+" @active-keystroke))))
         keydown-handler (partial handle-global-keystroke true)
         keyup-handler (partial handle-global-keystroke false)
         clear-all #(do (set-global-active-keystroke "")
@@ -417,9 +443,15 @@
       {:class       (if on? (if small? "translate-x-4" "translate-x-5") "translate-x-0")
        :aria-hidden "true"}]]]))
 
-;; `sequence` can be a list of symbols or strings
-(defn keyboard-shortcut [sequence]
-  [:span.keyboard-shortcut
+;; `sequence` can be a list of symbols, a list of strings, or a string
+(defn render-keyboard-shortcut [sequence]
+  (let [sequence (if (string? sequence)
+                   (-> sequence ;; turn string into sequence
+                       (str/trim)
+                       (str/lower-case)
+                       (str/split  #" |\+"))
+                   sequence)]
+    [:span.keyboard-shortcut
    (map-indexed (fn [i key]
                   [:code {:key i}
                    ;; Display "cmd" rather than "meta" to the user to describe the Mac
@@ -427,7 +459,13 @@
                    (if (or (= :meta key) (= "meta" key))
                      (util/meta-key-name)
                      (name key))])
-                sequence)])
+                sequence)]))
+
+(defn keyboard-shortcut-from-config [shortcut-name]
+  (let [default-binding (:binding (get shortcut-config/all-default-keyboard-shortcuts shortcut-name))
+        custom-binding  (when (state/shortcuts) (get (state/shortcuts) shortcut-name))
+        binding         (or custom-binding default-binding)]
+    (shortcut-helper/decorate-binding binding)))
 
 (defonce modal-show? (atom false))
 (rum/defc modal-overlay
@@ -499,7 +537,7 @@
                    (state/close-settings!))
         modal-panel-content (or modal-panel-content (fn [close] [:div]))]
     [:div.ui__modal
-     {:style {:z-index (if show? 100 -1)}}
+     {:style {:z-index (if show? 9999 -1)}}
      (css-transition
       {:in show? :timeout 0}
       (fn [state]
@@ -569,7 +607,7 @@
    {:class (if collapsed? "rotating-arrow collapsed" "rotating-arrow not-collapsed")}
    (svg/caret-right)])
 
-(rum/defcs foldable <
+(rum/defcs foldable < db-mixins/query rum/reactive
   (rum/local false ::control?)
   (rum/local false ::collapsed?)
   {:will-mount (fn [state]
@@ -596,7 +634,7 @@
          (cond->
           {:style    {:width       14
                       :height      16
-                      :margin-left -24}}
+                      :margin-left -30}}
            (not title-trigger?)
            (assoc :on-mouse-down on-mouse-down))
          [:span {:class (if @control? "control-show" "control-hide")}
@@ -664,6 +702,7 @@
     (Tippy (->
             (merge {:arrow true
                     :sticky true
+                    :delay 600
                     :theme "customized"
                     :disabled (not (state/enable-tooltip?))
                     :unmountHTMLWhenHide true
@@ -683,7 +722,7 @@
                              (when-let [html (:html opts)]
                                (if (fn? html)
                                  (html)
-                                 [:div.pr-3.py-1
+                                 [:div.px-2.py-1
                                   html]))
                              (catch js/Error e
                                (log/error :exception e)
@@ -719,3 +758,17 @@
                            (when (:class opts)
                              (str " " (string/trim (:class opts)))))}
               (dissoc opts :class))]))
+
+(rum/defc with-shortcut < rum/reactive
+  [shortcut-key position content]
+  (let [tooltip? (state/sub :ui/shortcut-tooltip?)]
+    (if tooltip?
+      (tippy
+       {:html [:div.text-sm.font-medium (keyboard-shortcut-from-config shortcut-key)]
+        :interactive true
+        :position    position
+        :theme       "monospace"
+        :delay       [1000, 100]
+        :arrow       true}
+       content)
+      content)))

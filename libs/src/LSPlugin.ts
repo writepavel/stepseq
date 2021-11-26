@@ -20,7 +20,7 @@ export type StyleOptions = {
   style: StyleString
 }
 
-export type UIFrameAttrs = {
+export type UIContainerAttrs = {
   draggable: boolean
   resizable: boolean
 
@@ -30,7 +30,11 @@ export type UIFrameAttrs = {
 export type UIBaseOptions = {
   key?: string
   replace?: boolean
-  template: string
+  template: string | null
+  style?: CSS.Properties
+  attrs?: Record<string, string>
+  close?: 'outside' | string
+  reset?: boolean // reset slot content or not
 }
 
 export type UIPathIdentity = {
@@ -51,14 +55,18 @@ export type UISlotOptions = UIBaseOptions & UISlotIdentity
 
 export type UIPathOptions = UIBaseOptions & UIPathIdentity
 
-export type UIOptions = UIPathOptions | UISlotOptions
+export type UIOptions = UIBaseOptions | UIPathOptions | UISlotOptions
 
 export interface LSPluginPkgConfig {
   id: PluginLocalIdentity
+  main: string
+  entry: string // alias of main
   title: string
   mode: 'shadow' | 'iframe'
   themes: Array<ThemeOptions>
   icon: string
+
+  [key: string]: any
 }
 
 export interface LSPluginBaseInfo {
@@ -167,16 +175,43 @@ export type SlashCommandActionCmd =
   | 'editor/clear-current-slash'
   | 'editor/restore-saved-cursor'
 export type SlashCommandAction = [cmd: SlashCommandActionCmd, ...args: any]
+export type SimpleCommandCallback = (e: IHookEvent) => void
 export type BlockCommandCallback = (e: IHookEvent & { uuid: BlockUUID }) => Promise<void>
 export type BlockCursorPosition = { left: number, top: number, height: number, pos: number, rect: DOMRect }
+
+export type SimpleCommandKeybinding = {
+  mode?: 'global' | 'non-editing' | 'editing',
+  binding: string,
+  mac?: string // special for Mac OS
+}
 
 /**
  * App level APIs
  */
 export interface IAppProxy {
+  // base
   getUserInfo: () => Promise<AppUserInfo | null>
-
   getUserConfigs: () => Promise<AppUserConfigs>
+
+  // commands
+  registerCommand: (
+    type: string,
+    opts: {
+      key: string,
+      label: string,
+      desc?: string,
+      palette?: boolean,
+      keybinding?: SimpleCommandKeybinding
+    },
+    action: SimpleCommandCallback) => void
+
+  registerCommandPalette: (
+    opts: {
+      key: string,
+      label: string,
+      keybinding?: SimpleCommandKeybinding
+    },
+    action: SimpleCommandCallback) => void
 
   // native
   relaunch: () => Promise<void>
@@ -191,8 +226,12 @@ export interface IAppProxy {
   replaceState: (k: string, params?: Record<string, any>, query?: Record<string, any>) => void
 
   // ui
-  showMsg: (content: string, status?: 'success' | 'warning' | string) => void
+  queryElementById: (id: string) => string | boolean
+  showMsg: (content: string, status?: 'success' | 'warning' | 'error' | string) => void
   setZoomFactor: (factor: number) => void
+  setFullScreen: (flag: boolean | 'toggle') => void
+  setLeftSidebarVisible: (flag: boolean | 'toggle') => void
+  setRightSidebarVisible: (flag: boolean | 'toggle') => void
 
   registerUIItem: (
     type: 'toolbar' | 'pagebar',
@@ -208,7 +247,28 @@ export interface IAppProxy {
   onCurrentGraphChanged: IUserHook
   onThemeModeChanged: IUserHook<{ mode: 'dark' | 'light' }>
   onBlockRendererSlotted: IUserSlotHook<{ uuid: BlockUUID }>
+
+  /**
+   * provide ui slot to block `renderer` macro for `{{renderer arg1, arg2}}`
+   *
+   * @example
+   * ```ts
+   * // e.g. {{renderer :h1, hello world, green}}
+   *
+   * logseq.App.onMacroRendererSlotted(({ slot, payload: { arguments } }) => {
+   *   let [type, text, color] = arguments
+   *   if (type !== ':h1') return
+   *    logseq.provideUI({
+   *      key: 'h1-playground',
+   *      slot, template: `
+   *       <h2 style="color: ${color || 'red'}">${text}</h2>
+   *      `,
+   *   })
+   * })
+   * ```
+   */
   onMacroRendererSlotted: IUserSlotHook<{ payload: { arguments: Array<string>, uuid: string, [key: string]: any } }>
+
   onPageHeadActionsSlotted: IUserSlotHook
   onRouteChanged: IUserHook<{ path: string, template: string }>
   onSidebarVisibleChanged: IUserHook<{ visible: boolean }>
@@ -296,7 +356,7 @@ export interface IEditorProxy extends Record<string, any> {
   insertBlock: (
     srcBlock: BlockIdentity,
     content: string,
-    opts?: Partial<{ before: boolean; sibling: boolean; properties: {} }>
+    opts?: Partial<{ before: boolean; sibling: boolean; isPageBlock: boolean; properties: {} }>
   ) => Promise<BlockEntity | null>
 
   insertBatchBlock: (
@@ -328,7 +388,7 @@ export interface IEditorProxy extends Record<string, any> {
   createPage: (
     pageName: BlockPageName,
     properties?: {},
-    opts?: Partial<{ redirect: boolean, createFirstBlock: boolean, format: BlockEntity['format'] }>
+    opts?: Partial<{ redirect: boolean, createFirstBlock: boolean, format: BlockEntity['format'], journal: boolean }>
   ) => Promise<PageEntity | null>
 
   deletePage: (
@@ -369,6 +429,11 @@ export interface IEditorProxy extends Record<string, any> {
     pageName: BlockPageName,
     blockId: BlockIdentity
   ) => void
+
+  openInRightSidebar: (uuid: BlockUUID) => void
+
+  // events
+  onInputSelectionEnd: IUserHook<{ caret: any, point: { x: number, y: number }, start: number, end: number, text: string }>
 }
 
 /**

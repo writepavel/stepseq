@@ -184,8 +184,7 @@
 
                         :page
                         (let [data (or alias data)]
-                          (route/redirect! {:to :page
-                                            :path-params {:name data}}))
+                          (route/redirect-to-page! data))
 
                         :file
                         (route/redirect! {:to :file
@@ -195,12 +194,9 @@
                         (let [block-uuid (uuid (:block/uuid data))
                               collapsed? (db/parents-collapsed? (state/get-current-repo) block-uuid)]
                           (if collapsed?
-                            (route/redirect! {:to :page
-                                              :path-params {:name (str block-uuid)}})
+                            (route/redirect-to-page! block-uuid)
                             (let [page (:block/name (:block/page (db/entity [:block/uuid block-uuid])))]
-                              (route/redirect! {:to :page
-                                                :path-params {:name page}
-                                                :query-params {:anchor (str "ls-block-" (:block/uuid data))}}))))
+                              (route/redirect-to-page! page  (str "ls-block-" (:block/uuid data))))))
                         nil)
                       (state/close-modal!))
          :on-shift-chosen (fn [{:keys [type data alias]}]
@@ -245,7 +241,7 @@
                                                    [:span.ml-1 (str "\"" search-q "\"")]]
 
                                                   :page
-                                                  [:span
+                                                  [:span {:data-page-ref data}
                                                    (when alias
                                                      [:span.mr-2.text-sm.font-medium.mb-2 (str "Alias -> " alias)])
                                                    (search-result-item "Page" (highlight-exact-query data search-q))]
@@ -256,10 +252,12 @@
                                                   :block
                                                   (let [{:block/keys [page content uuid]} data
                                                         page (or (:block/original-name page)
-                                                                 (:block/name page))
+                                                                (:block/name page))
                                                         repo (state/sub :git/current-repo)
                                                         format (db/get-page-format page)]
-                                                    (search-result-item "Block" (block-search-result-item repo uuid format content search-q search-mode)))
+                                                    [:span {:data-block-ref uuid}
+                                                      (search-result-item "Block"
+                                                        (block-search-result-item repo uuid format content search-q search-mode))])
 
                                                   nil)]))})
        (when (and has-more? (util/electron?) (not all?))
@@ -277,26 +275,24 @@
   [:div.recent-search
    [:div.px-4.py-2.text-sm.opacity-70.flex.flex-row.justify-between.align-items
     [:div "Recent search:"]
-    (ui/tippy {:html [:div.text-sm.font-medium
-                      "Shortcut: "
-                      [:code (util/->platform-shortcut "Ctrl + Shift + k")]]
-               :interactive     true
-               :arrow true}
-              [:div.flex-row.flex.align-items
-               [:div.mr-2 "Search in page:"]
-               [:div {:style {:margin-top 3}}
-                (ui/toggle in-page-search?
-                           (fn [_value]
-                             (state/set-search-mode! (if in-page-search? :global :page)))
-                           true)]
-               (ui/tippy {:html [:div
-                                 "Tip: " [:code (util/->platform-shortcut "Ctrl+Shift+p")] " to open the commands palette"]
-                          :interactive     true
-                          :arrow true}
-                         [:a.inline-block.fade-link
-                          {:style {:margin-left 12}
-                           :on-click #(state/toggle! :ui/command-palette-open?)}
-                          (ui/icon "command" {:style {:font-size 20}})])])]
+    (ui/with-shortcut :go/search-in-page "bottom"
+      [:div.flex-row.flex.align-items
+       [:div.mr-2 "Search in page:"]
+       [:div {:style {:margin-top 3}}
+        (ui/toggle in-page-search?
+                   (fn [_value]
+                     (state/set-search-mode! (if in-page-search? :global :page)))
+                   true)]
+       (ui/tippy {:html [:div
+                         ;; TODO: fetch from config
+                         "Tip: " [:code (util/->platform-shortcut "Ctrl + Shift + p")] " to open the commands palette"]
+                  :interactive     true
+                  :arrow           true
+                  :theme       "monospace"}
+                 [:a.inline-block.fade-link
+                  {:style {:margin-left 12}
+                   :on-click #(state/toggle! :ui/command-palette-open?)}
+                  (ui/icon "command" {:style {:font-size 20}})])])]
    (let [recent-search (mapv (fn [q] {:type :search :data q}) (db/get-key-value :recent/search))
          pages (->> (db/get-key-value :recent/pages)
                     (remove nil?)
@@ -308,8 +304,7 @@
       {:on-chosen (fn [{:keys [type data]}]
                     (case type
                       :page
-                      (route/redirect! {:to :page
-                                        :path-params {:name data}})
+                      (route/redirect-to-page! data)
                       :search
                       (let [q data]
                         (state/set-q! q)

@@ -16,7 +16,7 @@
             [promesa.core :as p]
             [rum.core :as rum]))
 
-(defonce ^:private state
+(defonce state
   (let [document-mode? (or (storage/get :document/mode?) false)
         current-graph (let [graph (storage/get :git/current-repo)]
                         (when graph (ipc/ipc "setCurrentGraph" graph))
@@ -77,6 +77,9 @@
                               false)
       ;; remember scroll positions of visited paths
       :ui/paths-scroll-positions {}
+      :ui/shortcut-tooltip? (if (false? (storage/get :ui/shortcut-tooltip?))
+                              false
+                              true)
 
       :document/mode? document-mode?
 
@@ -103,6 +106,7 @@
       :editor/document-mode? document-mode?
       :editor/args nil
       :editor/on-paste? false
+      :editor/last-key-code nil
 
       :db/last-transact-time {}
       :db/last-persist-transact-ids {}
@@ -235,6 +239,12 @@
   ([repo-url]
    (get-in @state [:config repo-url])))
 
+(def default-arweave-gateway "https://arweave.net")
+
+(defn get-arweave-gateway
+  []
+  (:arweave/gateway (get-config) default-arweave-gateway))
+
 (defonce built-in-macros
   {"img" "[:img.$4 {:src \"$1\" :style {:width $2 :height $3}}]"})
 
@@ -349,6 +359,15 @@
 
      (get-in @state [:me :preferred_format] "markdown")))))
 
+;; TODO: consider adding a pane in Settings to set this through the GUI (rather
+;; than having to go through the config.edn file)
+(defn get-editor-command-trigger
+  ([] (get-editor-command-trigger (get-current-repo)))
+  ([repo-url]
+   (or
+    (:editor/command-trigger (get-config repo-url)) ;; Get from user config
+    "/"))) ;; Set the default
+
 (defn markdown?
   []
   (= (keyword (get-preferred-format))
@@ -414,7 +433,7 @@
 
 (defn add-repo!
   [repo]
-  (when repo
+  (when (not (string/blank? repo))
     (update-state! [:me :repos]
                    (fn [repos]
                      (->> (conj repos repo)
@@ -516,6 +535,10 @@
 (defn get-edit-content
   []
   (get (:editor/content @state) (get-edit-input-id)))
+
+(defn sub-edit-content
+  []
+  (sub [:editor/content (get-edit-input-id)]))
 
 (defn append-current-edit-content!
   [append-text]
@@ -669,7 +692,6 @@
 
 (defn drop-last-selection-block!
   []
-  (def blocks (:selection/blocks @state))
   (let [last-block (peek (vec (:selection/blocks @state)))]
     (swap! state assoc
            :selection/mode true
@@ -834,6 +856,7 @@
                      :editor/editing? {edit-input-id true}
                      :editor/last-edit-block-input-id edit-input-id
                      :editor/last-edit-block block
+                     :editor/last-key-code nil
                      :cursor-range cursor-range))))
 
        (when-let [input (gdom/getElement edit-input-id)]
@@ -853,6 +876,12 @@
   (swap! state merge {:editor/editing? nil
                       :editor/block nil
                       :cursor-range nil}))
+
+(defn into-code-editor-mode!
+  []
+  (swap! state merge {:editor/editing? nil
+                      :cursor-range nil
+                      :editor/code-mode? true}))
 
 (defn set-last-pos!
   [new-pos]
@@ -1130,6 +1159,11 @@
   (storage/set "ls-left-sidebar-open?" (boolean value))
   (set-state! :ui/left-sidebar-open? value))
 
+(defn toggle-left-sidebar!
+  []
+  (set-left-sidebar-open!
+    (not (get-left-sidebar-open?))))
+
 (defn set-developer-mode!
   [value]
   (set-state! :ui/developer-mode? value)
@@ -1158,13 +1192,23 @@
     (set-state! :document/mode? (not mode))
     (storage/set :document/mode? (not mode))))
 
+(defn shortcut-tooltip-enabled?
+  []
+  (get @state :ui/shortcut-tooltip?))
+
+(defn toggle-shortcut-tooltip!
+  []
+  (let [mode (shortcut-tooltip-enabled?)]
+    (set-state! :ui/shortcut-tooltip? (not mode))
+    (storage/set :ui/shortcut-tooltip? (not mode))))
+
 (defn enable-tooltip?
   []
   (if (util/mobile?)
     false
     (get (get (sub-config) (get-current-repo))
-        :ui/enable-tooltip?
-        true)))
+         :ui/enable-tooltip?
+         true)))
 
 (defn show-command-doc?
   []
@@ -1516,3 +1560,11 @@
 (defn get-git-auto-commit-enabled?
   []
   (false? (sub [:electron/user-cfgs :git/disable-auto-commit?])))
+
+(defn set-last-key-code!
+  [key-code]
+  (set-state! :editor/last-key-code key-code))
+
+(defn get-last-key-code
+  []
+  (:editor/last-key-code @state))

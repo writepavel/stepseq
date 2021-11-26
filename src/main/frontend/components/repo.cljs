@@ -18,6 +18,7 @@
             [frontend.state :as state]
             [frontend.ui :as ui]
             [frontend.util :as util]
+            [frontend.fs :as fs]
             [frontend.version :as version]
             [reitit.frontend.easy :as rfe]
             [rum.core :as rum]
@@ -173,7 +174,7 @@
                (t :git/version) (str " " version/version)]]])))])))
 
 (rum/defc repos-dropdown < rum/reactive
-  [toggle-dropdown-f]
+  []
   (when-let [current-repo (state/sub :git/current-repo)]
     (rum/with-context [[t] i18n/*tongue-context*]
       (let [get-repo-name (fn [repo]
@@ -196,7 +197,9 @@
                                                  (common-handler/reset-config! url nil)
                                                  (shortcut/refresh!)
                                                  (when-not (= :draw (state/get-current-route))
-                                                   (route-handler/redirect-to-home!)))}})
+                                                   (route-handler/redirect-to-home!))
+                                                 (when-let [dir-name (config/get-repo-dir url)]
+                                                   (fs/watch-dir! dir-name)))}})
                         switch-repos)
             links (concat repo-links
                           [(when (seq switch-repos)

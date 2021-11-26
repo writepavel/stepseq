@@ -4,13 +4,13 @@
   #?(:cljs (:require
             ["/frontend/selection" :as selection]
             ["/frontend/utils" :as utils]
-            [frontend.mobile.util :refer [is-native-platform?]]
             [camel-snake-kebab.core :as csk]
             [camel-snake-kebab.extras :as cske]
             [cljs-bean.core :as bean]
             [cljs-time.coerce :as tc]
             [cljs-time.core :as t]
             [dommy.core :as d]
+            [frontend.mobile.util :refer [is-native-platform?]]
             [frontend.react-impls :as react-impls]
             [goog.dom :as gdom]
             [goog.object :as gobj]
@@ -606,18 +606,42 @@
 
 ;; Add documentation
 (defn replace-first [pattern s new-value]
-  (when-let [first-index (string/index-of s pattern)]
-    (str new-value (subs s (+ first-index (count pattern))))))
+  (if-let [first-index (string/index-of s pattern)]
+    (str new-value (subs s (+ first-index (count pattern))))
+    s))
 
 (defn replace-last
   ([pattern s new-value]
    (replace-last pattern s new-value true))
   ([pattern s new-value space?]
-   (when-let [last-index (string/last-index-of s pattern)]
+   (if-let [last-index (string/last-index-of s pattern)]
      (let [prefix (subs s 0 last-index)]
        (if space?
          (concat-without-spaces prefix new-value)
-         (str prefix new-value))))))
+         (str prefix new-value)))
+     s)))
+
+(defonce default-escape-chars "[]{}().+*?|")
+
+(defn replace-ignore-case
+  [s old-value new-value & [escape-chars]]
+  (let [escape-chars (or escape-chars default-escape-chars)
+        old-value (if (string? escape-chars)
+                    (reduce (fn [acc escape-char]
+                              (string/replace acc escape-char (str "\\" escape-char)))
+                            old-value escape-chars)
+                    old-value)]
+    (string/replace s (re-pattern (str "(?i)" old-value)) new-value)))
+
+(defn replace-first-ignore-case
+  [s old-value new-value & [escape-chars]]
+  (let [escape-chars (or escape-chars default-escape-chars)
+        old-value (if (string? escape-chars)
+                    (reduce (fn [acc escape-char]
+                              (string/replace acc escape-char (str "\\" escape-char)))
+                            old-value escape-chars)
+                    old-value)]
+    (string/replace-first s (re-pattern (str "(?i)" old-value)) new-value)))
 
 ;; copy from https://stackoverflow.com/questions/18735665/how-can-i-get-the-positions-of-regex-matches-in-clojurescript
 #?(:cljs
@@ -754,6 +778,11 @@
    (defn get-blocks-noncollapse []
      (->> (d/by-class "ls-block")
           (filter (fn [b] (some? (gobj/get b "offsetParent")))))))
+
+#?(:cljs
+   (defn remove-embeded-blocks [blocks]
+     (->> blocks
+          (remove (fn [b] (= "true" (d/attr b "data-embed")))))))
 
 ;; Take the idea from https://stackoverflow.com/questions/4220478/get-all-dom-block-elements-for-selected-texts.
 ;; FIXME: Note that it might not works for IE.
@@ -909,7 +938,17 @@
        (when-let [index (.indexOf blocks block)]
          (let [idx (dec index)]
            (when (>= idx 0)
-             (nth blocks idx)))))))
+             (nth-safe blocks idx)))))))
+
+#?(:cljs
+   (defn get-prev-block-non-collapsed-non-embed
+     [block]
+     (when-let [blocks (->> (get-blocks-noncollapse)
+                            remove-embeded-blocks)]
+       (when-let [index (.indexOf blocks block)]
+         (let [idx (dec index)]
+           (when (>= idx 0)
+             (nth-safe blocks idx)))))))
 
 #?(:cljs
    (defn get-next-block-non-collapsed
@@ -969,7 +1008,7 @@
     (url-encode s)))
 
 #?(:cljs
-   (defn- get-clipboard-as-html
+   (defn get-clipboard-as-html
      [event]
      (if-let [c (gobj/get event "clipboardData")]
        [(.getData c "text/html") (.getData c "text")]
@@ -1107,11 +1146,14 @@
 
 (defn ->platform-shortcut
   [keyboard-shortcut]
-  (if mac?
-    (-> keyboard-shortcut
-        (string/replace "Ctrl" "Cmd")
-        (string/replace "Alt" "Opt"))
-    keyboard-shortcut))
+  (let [result (or keyboard-shortcut "")
+        result (string/replace result "left" "←")
+        result (string/replace result "right" "→")]
+    (if mac?
+      (-> result
+          (string/replace "Ctrl" "Cmd")
+          (string/replace "Alt" "Opt"))
+      result)))
 
 (defn remove-common-preceding
   [col1 col2]
@@ -1411,3 +1453,13 @@
            button (gobj/get e "button")]
        (or (= which 3)
            (= button 2)))))
+
+#?(:cljs
+   (defn url?
+     [s]
+     (and (string? s)
+          (try
+            (js/URL. s)
+            true
+            (catch js/Error _e
+              false)))))

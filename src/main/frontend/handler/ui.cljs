@@ -12,7 +12,6 @@
             [goog.dom :as gdom]
             [goog.object :as gobj]
             [clojure.string :as string]
-            [frontend.storage :as storage]
             [rum.core :as rum]
             [clojure.edn :as edn]))
 
@@ -21,11 +20,6 @@
   []
   (when-let [elem (gdom/getElement "close-left-bar")]
     (.click elem)))
-
-(defn toggle-left-sidebar!
-  []
-  (state/set-left-sidebar-open!
-    (not (@state/state :ui/left-sidebar-open?))))
 
 (defn hide-right-sidebar
   []

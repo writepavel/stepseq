@@ -12,7 +12,8 @@
             [frontend.state :as state]
             [frontend.ui :as ui]
             [frontend.util :as util]
-            [rum.core :as rum]))
+            [rum.core :as rum]
+            [frontend.config :as config]))
 
 (rum/defc choose-preferred-format
   []
@@ -57,7 +58,7 @@
           [:div.mt-2.mb-4.relative.rounded-md.shadow-sm.max-w-xs
            [:input#branch.form-input.block.w-full.sm:text-sm.sm:leading-5
             {:value @branch
-             :placeholder "e.g. master"
+             :placeholder "e.g. main"
              :on-change (fn [e]
                           (reset! branch (util/evalue e)))}]]]]
 
@@ -132,3 +133,28 @@
                              (interpose [:b.mt-10.mb-5.opacity-50 "OR"]))]
     (rum/with-context [[t] i18n/*tongue-context*]
       [:div.p-8.flex.flex-col available-graph])))
+
+(rum/defc demo-graph-alert
+  []
+  (when (and (config/demo-graph?)
+             (not config/publishing?))
+    (ui/admonition
+     :warning
+     [:p "This is a demo graph, changes will not be saved until you open a local folder."])))
+
+(rum/defc github-integration-soon-deprecated-alert
+  []
+  (when-let [repo (state/get-current-repo)]
+    (when (string/starts-with? repo "https://github.com")
+      [:div.github-alert
+       (ui/admonition
+        :warning
+        [:p "We're going to deprecate the GitHub integration when the mobile app is out, you can switch to the latest "
+         [:a {:href "https://github.com/logseq/logseq/releases"
+              :target "_blank"}
+          "desktop app"]
+         [:span ", see more details at "]
+         [:a {:href "https://discord.com/channels/725182569297215569/735735090784632913/861656585578086400"
+              :target "_blank"}
+          "here"]
+         [:span "."]])])))

@@ -34,7 +34,6 @@
             [frontend.components.plugins :as plugins]
             [frontend.handler.plugin :as plugin-handler]
             [frontend.handler.block :as block-handler]
-            [frontend.handler.recent :as recent-handler]
             [frontend.handler.dnd :as dnd]
             [frontend.handler.editor :as editor-handler]
             [frontend.handler.repeated :as repeated]
@@ -49,7 +48,7 @@
             [frontend.template :as template]
             [frontend.text :as text]
             [frontend.ui :as ui]
-            [frontend.util :as util]
+            [frontend.util :as util :refer [profile]]
             [frontend.util.clock :as clock]
             [frontend.util.property :as property]
             [frontend.util.drawer :as drawer]
@@ -89,6 +88,7 @@
 
 ;; TODO: dynamic
 (defonce max-blocks-per-page 200)
+(defonce max-depth-of-links 5)
 (defonce *blocks-container-id (atom 0))
 
 ;; TODO:
@@ -126,7 +126,9 @@
   [url]
   (match url
     ["File" s]
-    (string/replace s "file://" "")
+    (-> (string/replace s "file://" "")
+        ;; "file:/Users/ll/Downloads/test.pdf" is a normal org file link
+        (string/replace "file:" ""))
 
     ["Complex" m]
     (let [{:keys [link protocol]} m]
@@ -380,8 +382,6 @@
       :on-mouse-down
       (fn [e]
         (util/stop e)
-        (when redirect-page-name
-          (recent-handler/add-page-to-recent! (state/get-current-repo) redirect-page-name))
         (let [create-first-block! (fn []
                                     (when-not (editor-handler/add-default-title-property-if-needed! redirect-page-name)
                                       (editor-handler/insert-first-page-block-if-not-exists! redirect-page-name)))]
@@ -643,13 +643,10 @@
           hl-type (get-in block [:block/properties :hl-type])
           repo (state/get-current-repo)]
       (if block
-        (let [title (let [title (:block/title block)
-                          block-content (block-content (assoc config :block-ref? true)
-                                                       block nil (:block/uuid block)
-                                                       (:slide? config))
-                          class (if (seq title) "block-ref" "block-ref-no-title")]
-                      [:span {:class class}
-                       block-content])
+        (let [title [:span {:class "block-ref"}
+                     (block-content (assoc config :block-ref? true)
+                                    block nil (:block/uuid block)
+                                    (:slide? config))]
               inner (if label
                       (->elem
                        :span.block-ref
@@ -857,8 +854,12 @@
     (let [{:keys [url label title metadata full_text]} link]
       (match url
         ["Block_ref" id]
-        (let [label* (if (seq (mldoc/plain->text label)) label nil)]
-          (block-reference (assoc config :reference? true) id label*))
+        (let [label* (if (seq (mldoc/plain->text label)) label nil)
+              {:keys [link-depth]} config
+              link-depth (or link-depth 0)]
+          (if (> link-depth max-depth-of-links)
+            [:p.warning.text-sm "Block ref nesting is too deep"]
+            (block-reference (assoc config :reference? true :link-depth (inc link-depth)) id label*)))
 
         ["Page_ref" page]
         (let [format (get-in config [:block :block/format])]
@@ -1200,16 +1201,21 @@
               (ui/tweet-embed id))))
 
         (= name "embed")
-        (let [a (first arguments)]
+        (let [a (first arguments)
+              {:keys [link-depth]} config
+              link-depth (or link-depth 0)]
           (cond
             (nil? a) ; empty embed
             nil
+
+            (> link-depth max-depth-of-links)
+            [:p.warning.text-sm "Embed depth is too deep"]
 
             (and (string/starts-with? a "[[")
                  (string/ends-with? a "]]"))
             (let [page-name (text/get-page-name a)]
               (when-not (string/blank? page-name)
-                (page-embed config page-name)))
+                (page-embed (assoc config :link-depth (inc link-depth)) page-name)))
 
             (and (string/starts-with? a "((")
                  (string/ends-with? a "))"))
@@ -1220,7 +1226,7 @@
                                  (let [s (string/trim s)]
                                    (and (util/uuid-string? s)
                                         (uuid s))))]
-                (block-embed config id)))
+                (block-embed (assoc config :link-depth (inc link-depth)) id)))
 
             :else                       ;TODO: maybe collections?
             nil))
@@ -1360,7 +1366,7 @@
                (rum/with-key (block-container config child)
                  (:block/uuid child)))))]))))
 
-(defn block-content-empty?
+(defn- block-content-empty?
   [{:block/keys [properties title body]}]
   (and
    (or
@@ -1694,7 +1700,7 @@
   [state block typ ast]
   (let [show? (get state ::show?)]
     [:div.flex.flex-col.timestamp
-     [:div.text-sm.mb-1.flex.flex-row
+     [:div.text-sm.flex.flex-row
       [:div.opacity-50.font-medium.timestamp-label
        (str typ ": ")]
       [:a.opacity-80.hover:opacity-100
@@ -1736,18 +1742,18 @@
                  (d/has-class? target "image-resize"))
         (editor-handler/clear-selection!)
         (editor-handler/unhighlight-blocks!)
-        (let [block (or (db/pull [:block/uuid (:block/uuid block)]) block)
-              f #(let [cursor-range (util/caret-range (gdom/getElement block-id))
+        (let [f #(let [block (or (db/pull [:block/uuid (:block/uuid block)]) block)
+                       cursor-range (util/caret-range (gdom/getElement block-id))
+                       new-content (:block/content block)
                        content (-> (property/remove-built-in-properties (:block/format block)
                                                                         content)
                                    (drawer/remove-logbook))]
                    ;; save current editing block
                    (let [{:keys [value] :as state} (editor-handler/get-state)]
                      (editor-handler/save-block! state value))
-
                    (state/set-editing!
                     edit-input-id
-                    content
+                    new-content
                     block
                     cursor-range
                     false))]
@@ -1777,9 +1783,37 @@
                   (= move-to :nested)))
           (dnd-separator move-to block-content?))))))
 
+(defn clock-summary-cp
+  [block body]
+  [:div {:style {:max-width 100}}
+   (when (and (state/enable-timetracking?)
+              (or (= (:block/marker block) "DONE")
+                  (contains? #{"TODO" "LATER"} (:block/marker block))))
+     (let [summary (clock/clock-summary body true)]
+       (when (and summary
+                  (not= summary "0m")
+                  (not (string/blank? summary)))
+         (ui/tippy {:html        (fn []
+                                   (when-let [logbook (drawer/get-logbook body)]
+                                     (let [clocks (->> (last logbook)
+                                                       (filter #(string/starts-with? % "CLOCK:"))
+                                                       (remove string/blank?))]
+                                       [:div.p-4
+                                        [:div.font-bold.mb-2 "LOGBOOK:"]
+                                        [:ul
+                                         (for [clock (take 10 (reverse clocks))]
+                                           [:li clock])]])))
+                    :interactive true
+                    :delay       [1000, 100]}
+                   [:div.text-sm.time-spent.ml-1 {:style {:padding-top 3}}
+                    [:a.fade-link
+                     summary]]))))])
+
 (rum/defc block-content < rum/reactive
-  [config {:block/keys [uuid title body content children properties scheduled deadline] :as block} edit-input-id block-id slide?]
-  (let [collapsed? (get properties :collapsed)
+  [config {:block/keys [uuid content children properties scheduled deadline format pre-block?] :as block} edit-input-id block-id slide?]
+  (let [{:block/keys [title body] :as block} (if (:block/title block) block
+                                                 (merge block (block/parse-title-and-body uuid format pre-block? content)))
+        collapsed? (get properties :collapsed)
         block-ref? (:block-ref? config)
         block-ref-with-title? (and block-ref? (seq title))
         block-type (or (:ls-type properties) :default)
@@ -1787,14 +1821,14 @@
         mouse-down-key (if (util/ios?)
                          :on-click
                          :on-mouse-down ; TODO: it seems that Safari doesn't work well with on-mouse-down
-)
+                         )
         attrs (cond->
-               {:blockid       (str uuid)
-                :data-type (name block-type)
-                :style {:width "100%"}}
-                (not block-ref?)
-                (assoc mouse-down-key (fn [e]
-                                        (block-content-on-mouse-down e block block-id content edit-input-id))))]
+                  {:blockid       (str uuid)
+                   :data-type (name block-type)
+                   :style {:width "100%"}}
+                  (not block-ref?)
+                  (assoc mouse-down-key (fn [e]
+                                          (block-content-on-mouse-down e block block-id content edit-input-id))))]
     [:div.block-content.inline
      (cond-> {:id (str "block-content-" uuid)
               :on-mouse-up (fn [_e]
@@ -1807,47 +1841,48 @@
        (merge attrs))
 
      [:span
-      ;; .flex.relative {:style {:width "100%"}}
-      [:span
-       ;; .flex-1.flex-col.relative.block-content
-       (cond
-         (seq title)
-         (build-block-title config block)
+      [:div.flex.flex-row.justify-between
+       [:div.flex-1
+        (cond
+          (seq title)
+          (build-block-title config block)
 
-         :else
-         nil)
+          :else
+          nil)]
 
-       (when (seq children)
-         (dnd-separator-wrapper block block-id slide? false true))
+       (clock-summary-cp block body)]
 
-       (when deadline
-         (when-let [deadline-ast (block-handler/get-deadline-ast block)]
-           (timestamp-cp block "DEADLINE" deadline-ast)))
+      (when (seq children)
+        (dnd-separator-wrapper block block-id slide? false true))
 
-       (when scheduled
-         (when-let [scheduled-ast (block-handler/get-scheduled-ast block)]
-           (timestamp-cp block "SCHEDULED" scheduled-ast)))
+      (when deadline
+        (when-let [deadline-ast (block-handler/get-deadline-ast block)]
+          (timestamp-cp block "DEADLINE" deadline-ast)))
 
-       (when (and (seq properties)
-                  (let [hidden? (property/properties-built-in? properties)]
-                    (not hidden?))
-                  (not block-ref?)
-                  (not (:slide? config)))
-         (properties-cp config block))
+      (when scheduled
+        (when-let [scheduled-ast (block-handler/get-scheduled-ast block)]
+          (timestamp-cp block "SCHEDULED" scheduled-ast)))
 
-       (when (and (not block-ref-with-title?) (seq body))
-         [:div.block-body {:style {:display (if (and collapsed? (seq title)) "none" "")}}
-          ;; TODO: consistent id instead of the idx (since it could be changed later)
-          (let [body (block/trim-break-lines! (:block/body block))]
-            (for [[idx child] (medley/indexed body)]
-              (when-let [block (markup-element-cp config child)]
-                (rum/with-key (block-child block)
-                  (str uuid "-" idx)))))])
+      (when (and (seq properties)
+                 (let [hidden? (property/properties-built-in? properties)]
+                   (not hidden?))
+                 (not block-ref?)
+                 (not (:slide? config)))
+        (properties-cp config block))
 
-       (case (:block/warning block)
-         :multiple-blocks
-         [:p.warning.text-sm "Full content is not displayed, Logseq doesn't support multiple unordered lists or headings in a block."]
-         nil)]]]))
+      (when (and (not block-ref-with-title?) (seq body))
+        [:div.block-body {:style {:display (if (and collapsed? (seq title)) "none" "")}}
+         ;; TODO: consistent id instead of the idx (since it could be changed later)
+         (let [body (block/trim-break-lines! (:block/body block))]
+           (for [[idx child] (medley/indexed body)]
+             (when-let [block (markup-element-cp config child)]
+               (rum/with-key (block-child block)
+                 (str uuid "-" idx)))))])
+
+      (case (:block/warning block)
+        :multiple-blocks
+        [:p.warning.text-sm "Full content is not displayed, Logseq doesn't support multiple unordered lists or headings in a block."]
+        nil)]]))
 
 (rum/defc block-refs-count < rum/reactive
   [block]
@@ -1899,8 +1934,8 @@
       [:div.flex.flex-row.block-content-wrapper
        [:div.flex-1.w-full {:style {:display (if (:slide? config) "block" "flex")}}
         (ui/catch-error
-          (block-content-fallback edit-input-id block)
-          (block-content config block edit-input-id block-id slide?))]
+         (block-content-fallback edit-input-id block)
+         (block-content config block edit-input-id block-id slide?))]
        [:div.flex.flex-row
         (when (and (:embed? config)
                    (:embed-parent config))
@@ -1910,29 +1945,6 @@
                              (when-let [block (:embed-parent config)]
                                (editor-handler/edit-block! block :max (:block/uuid block))))}
            svg/edit])
-
-        (when (and (state/enable-timetracking?)
-                   (or (= (:block/marker block) "DONE")
-                       (contains? #{"TODO" "LATER"} (:block/marker block))))
-          (let [summary (clock/clock-summary body true)]
-            (when (and summary
-                       (not= summary "0m")
-                       (not (string/blank? summary)))
-              (ui/tippy {:html        (fn []
-                                        (when-let [logbook (drawer/get-logbook body)]
-                                          (let [clocks (->> (last logbook)
-                                                            (filter #(string/starts-with? % "CLOCK:"))
-                                                            (remove string/blank?))]
-                                            [:div.p-4
-                                             [:div.font-bold.mb-2 "LOGBOOK:"]
-                                             [:ul
-                                              (for [clock (take 10 (reverse clocks))]
-                                                [:li clock])]])))
-                         :interactive true
-                         :delay       [1000, 100]}
-                        [:div.text-sm.time-spent.ml-1 {:style {:padding-top 3}}
-                         [:a.fade-link
-                          summary]]))))
 
         (block-refs-count block)]])))
 
@@ -1983,12 +1995,17 @@
                               [:page
                                (or page-original-name page-name)])
             parents-props (doall
-                           (for [{:block/keys [uuid title body name] :as block} parents]
+                           (for [{:block/keys [uuid name content] :as block} parents]
                              (when-not name ; not page
-                               [block
-                                (if (seq title)
-                                  (->elem :span (map-inline config title))
-                                  (->elem :div (markup-elements-cp config body)))])))
+                               (let [{:block/keys [title body]} (block/parse-title-and-body
+                                                                 uuid
+                                                                 (:block/format block)
+                                                                 (:block/pre-block? block)
+                                                                 content)]
+                                 [block
+                                 (if (seq title)
+                                   (->elem :span (map-inline config title))
+                                   (->elem :div (markup-elements-cp config body)))]))))
             breadcrumb (->> (into [] parents-props)
                             (concat [page-name-props] (when more? [:more]))
                             (filterv identity)
@@ -2143,8 +2160,10 @@
                              (select-keys (second (:rum/args new-state)) compare-keys))
                        (not= (select-keys (first (:rum/args old-state)) config-compare-keys)
                              (select-keys (first (:rum/args new-state)) config-compare-keys)))))}
-  [state config {:block/keys [uuid body repo children pre-block? top? properties refs heading-level level type] :as block}]
-  (let [blocks-container-id (:blocks-container-id config)
+  [state config {:block/keys [uuid repo children pre-block? top? properties refs heading-level level type format content] :as block}]
+  (let [block (merge block (block/parse-title-and-body uuid format pre-block? content))
+        body (:block/body block)
+        blocks-container-id (:blocks-container-id config)
         config (update config :block merge block)
         ;; Each block might have multiple queries, but we store only the first query's result
         config (if (nil? (:query-result config))
@@ -2181,8 +2200,8 @@
       {:id block-id
        :data-refs data-refs
        :data-refs-self data-refs-self
+       :data-collapsed (and collapsed? has-child?)
        :class (str uuid
-                   (when (and collapsed? has-child?) " collapsed")
                    (when pre-block? " pre-block")
                    (when (and card? (not review-cards?)) " shadow-xl"))
        :blockid (str uuid)
@@ -2349,6 +2368,32 @@
        tb-col-groups
        (cons head groups)))]))
 
+(defn logbook-cp
+  [log]
+  (let [clocks (filter #(string/starts-with? % "CLOCK:") log)
+        clocks (reverse (sort-by str clocks))
+        ;; TODO: diplay states change log
+        states (filter #(not (string/starts-with? % "CLOCK:")) log)]
+    (when (seq clocks)
+      (let [tr (fn [elm cols] (->elem :tr
+                                      (mapv (fn [col] (->elem elm col)) cols)))
+            head  [:thead.overflow-x-scroll (tr :th.py-0 ["Type" "Start" "End" "Span"])]
+            clock-tbody (->elem
+                         :tbody.overflow-scroll.sm:overflow-auto
+                         (mapv (fn [clock]
+                                 (let [cols (->> (string/split clock #": |--|=>")
+                                                 (map string/trim))]
+                                   (mapv #(tr :td.py-0 %) [cols])))
+                               clocks))]
+        [:div.overflow-x-scroll.sm:overflow-auto
+         (->elem
+          :table.m-0
+          {:class "logbook-table"
+           :border 0
+           :style {:width "max-content"}
+           :cell-spacing 15}
+          (cons head [clock-tbody]))]))))
+
 (defn map-inline
   [config col]
   (map #(inline config %) col))
@@ -2514,7 +2559,8 @@
 
               :else
               [:div.text-sm.mt-2.ml-2.font-medium.opacity-50 "Empty"])]
-           {:default-collapsed? collapsed?}))]))))
+           {:default-collapsed? collapsed?
+            :title-trigger? true}))]))))
 
 (defn admonition
   [config type result]
@@ -2566,6 +2612,8 @@
             (highlight/highlight (str (medley/random-uuid)) {:data-lang language} code)
             [:div
              (lazy-editor/editor config (str (dc/squuid)) attr code options)
+             ;; FIXME: The following code seemed unreachable
+             ;; options has key: :lines, :language, :full_content, :pos_meta
              (let [options (:options options)]
                (when (and (= language "text/x-clojure") (contains? (set options) ":results"))
                  (sci/eval-result code)))]))))))
@@ -2586,15 +2634,17 @@
                                       [:logbook/settings :enabled-in-timestamped-blocks] true)
                           (or (:block/scheduled (:block config))
                               (:block/deadline (:block config)))))))
-          [:div.flex.flex-col
-           [:div.text-sm.mt-1.flex.flex-row
+          [:div
+           [:div.text-sm
             [:div.drawer {:data-drawer-name name}
              (ui/foldable
               [:div.opacity-50.font-medium
                (util/format ":%s:" (string/upper-case name))]
-              [:div (apply str lines)
-               [:div.opacity-50.font-medium {:style {:width 95}}
-                ":END:"]]
+              [:div.opacity-50.font-medium
+               (if (= name "logbook")
+                 (logbook-cp lines)
+                 (apply str lines))
+               [:div ":END:"]]
               {:default-collapsed? true
                :title-trigger? true})]]])
 
@@ -2867,7 +2917,7 @@
                 parent-blocks (group-by :block/parent blocks)]
             [:div.my-2 (cond-> {:key (str "page-" (:db/id page))}
                          (:ref? config)
-                         (assoc :class "color-level px-7 py-2 rounded"))
+                         (assoc :class "color-level px-2 sm:px-7 py-2 rounded"))
              (ui/foldable
               [:div
                (page-cp config page)
@@ -2890,7 +2940,7 @@
                 page (db/entity (:db/id page))]
             [:div.my-2 (cond-> {:key (str "page-" (:db/id page))}
                          (:ref? config)
-                         (assoc :class "color-level px-7 py-2 rounded"))
+                         (assoc :class "color-level px-2 sm:px-7 py-2 rounded"))
              (ui/foldable
               [:div
                (page-cp config page)

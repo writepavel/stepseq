@@ -6,7 +6,7 @@
   ;; rum                         {:local/root "/home/tienson/codes/source/clj/rum"}
   ;; persistent-sorted-set       {:mvn/version "0.1.2"}
   datascript/datascript       {:git/url "https://github.com/logseq/datascript",
-                               :sha "ddf86f3165be621a78e595577eb271472e9f1d07"}
+                               :sha "de8df66e69ecd847c048f548fa0d5de0d4378bd0"}
   datascript-transit/datascript-transit
   {:mvn/version "0.3.0"
    :exclusions [datascript/datascript]}
@@ -37,7 +37,8 @@
   camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.2"}
   instaparse/instaparse       {:mvn/version "1.4.10"}
   nubank/workspaces           {:mvn/version "1.1.1"}
-  frankiesardo/linked         {:mvn/version "1.3.0"}}
+  frankiesardo/linked         {:mvn/version "1.3.0"}
+  org.clojars.mmb90/cljs-cache {:mvn/version "0.1.4"}}
 
  :aliases {:cljs {:extra-paths ["src/dev-cljs/" "src/test/" "src/electron/"]
                   :extra-deps  {org.clojure/clojurescript   {:mvn/version "1.10.879"}

@@ -1,9 +1,7 @@
 (ns frontend.text
   (:require [frontend.config :as config]
             [frontend.util :as util]
-            [clojure.string :as string]
-            [clojure.set :as set]
-            [medley.core :as medley]))
+            [clojure.string :as string]))
 
 (def page-ref-re-0 #"\[\[(.*)\]\]")
 (def org-page-ref-re #"\[\[(file:.*)\]\[.+?\]\]")
@@ -338,13 +336,11 @@
              []
              ks))))
 
-(defn remove-indentations
-  [text]
-  (when (string? text)
-    (let [lines (string/split-lines text)
-          spaces (re-find #"^[\s\t]+" (first lines))
-          spaces-count (count spaces)]
-      (string/join "\n" (map (fn [line]
-                               (let [spaces (re-find #"^[\s\t]+" line)
-                                     spaces-count (min (count spaces) spaces-count)]
-                                 (util/safe-subs line spaces-count))) lines)))))
+(defn get-graph-name-from-path
+  [path]
+  (when (string? path)
+    (let [parts (->> (string/split path #"/")
+                     (take-last 2))]
+      (if (not= (first parts) "0")
+        (string/join "/" parts)
+        (last parts)))))

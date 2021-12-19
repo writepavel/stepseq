@@ -47,6 +47,7 @@
             [frontend.util.page-property :as page-property]
             [frontend.util.property :as property]
             [frontend.util.thingatpt :as thingatpt]
+            [frontend.util.list :as list]
             [goog.dom :as gdom]
             [goog.dom.classes :as gdom-classes]
             [goog.object :as gobj]
@@ -347,8 +348,10 @@
     value))
 
 (defn wrap-parse-block
-  [{:block/keys [content format left page uuid level] :as block}]
+  [{:block/keys [content format left page uuid level pre-block?] :as block}]
   (let [block (or (and (:db/id block) (db/pull (:db/id block))) block)
+        block (merge block
+                     (block/parse-title-and-body uuid format pre-block? (:block/content block)))
         properties (:block/properties block)
         real-content (:block/content block)
         content (if (and (seq properties) real-content (not= real-content content))
@@ -705,8 +708,13 @@
                             (assoc :block/uuid (or custom-uuid (db/new-block-id))))
               [block-m sibling?] (cond
                                    before?
-                                   (let [block (db/pull (:db/id (:block/left block)))
-                                         sibling? (if (:block/name block) false sibling?)]
+                                   (let [first-child? (->> [:block/parent :block/left]
+                                                           (map #(:db/id (get block %)))
+                                                           (apply =))
+                                         block (db/pull (:db/id (:block/left block)))
+                                         sibling? (if (or first-child? ;; insert as first child
+                                                          (:block/name block))
+                                                    false sibling?)]
                                      [block sibling?])
 
                                    sibling?
@@ -747,7 +755,6 @@
      :block/format format
      :block/content content
      :block/parent page
-     :block/unordered true
      :block/page page}))
 
 (defn default-properties-block
@@ -767,7 +774,6 @@
       :block/format format
       :block/content content
       :block/parent page
-      :block/unordered true
       :block/page page})))
 
 (defn add-default-title-property-if-needed!
@@ -1113,18 +1119,19 @@
     (state/exit-editing-and-set-selected-blocks! [block])))
 
 (defn- blocks-with-level
+  "Should be sorted already."
   [blocks]
-  (let [level-blocks (mapv #(assoc % :level 1) blocks)
-        level-blocks-map (into {} (mapv (fn [b] [(:db/id b) b]) level-blocks))
-        [level-blocks-map _]
-        (reduce (fn [[r state] [id block]]
-                  (if-let [parent-level (get-in state [(:db/id (:block/parent block)) :level])]
-                    [(conj r [id (assoc block :level (inc parent-level))])
-                     (assoc-in state [(:db/id block) :level] (inc parent-level))]
-                    [(conj r [id block])
-                     state]))
-                [{} level-blocks-map] level-blocks-map)]
-    level-blocks-map))
+  (let [root (assoc (first blocks) :level 1)]
+    (loop [m [[(:db/id root) root]]
+           blocks (rest blocks)]
+      (if (empty? blocks)
+        m
+        (let [block (first blocks)
+              parent-id (:db/id (:block/parent block))
+              parent-level (:level (second (first (filter (fn [x] (= (first x) parent-id)) m))))
+              block (assoc block :level (inc parent-level))
+              m' (vec (conj m [(:db/id block) block]))]
+          (recur m' (rest blocks)))))))
 
 (defn- blocks-vec->tree
   [blocks]
@@ -1160,8 +1167,8 @@
                                  (vec (tree/sort-blocks (db/get-block-children repo (:block/uuid b)) b))
                                  [b])) blocks))
         block-ids* (mapv :block/uuid blocks*)
-        level-blocks-map (blocks-with-level blocks*)
-        level-blocks-uuid-map (into {} (mapv (fn [b] [(:block/uuid b) b]) (vals level-blocks-map)))
+        level-blocks (blocks-with-level blocks*)
+        level-blocks-uuid-map (into {} (mapv (fn [b] [(:block/uuid b) b]) (map second level-blocks)))
         level-blocks (mapv (fn [uuid] (get level-blocks-uuid-map uuid)) block-ids*)
         tree (blocks-vec->tree level-blocks)
         top-level-block-uuids (mapv :block/uuid (filterv #(not (vector? %)) tree))
@@ -1186,16 +1193,41 @@
 
 (defn copy-block-refs
   []
-  (when-let [blocks (seq (get-selected-blocks-with-children))]
-    (let [ids (->> (distinct (map #(when-let [id (dom/attr % "blockid")]
-                                     (uuid id)) blocks))
-                   (remove nil?))
-          ids-str (some->> ids
-                           (map (fn [id] (util/format "((%s))" id)))
-                           (string/join "\n\n"))]
-      (doseq [id ids]
-        (set-block-id! id))
-      (util/copy-to-clipboard! ids-str))))
+  (when-let [selected-blocks (seq (get-selected-blocks-with-children))]
+    (let [blocks (->> (distinct (map #(when-let [id (dom/attr % "blockid")]
+                                        (let [level (dom/attr % "level")]
+                                          {:id (uuid id)
+                                           :level (int level)}))
+                                     selected-blocks))
+                      (remove nil?))
+          first-block (first blocks)
+          first-root-level-index (ffirst
+                                   (filter (fn [[_ block]] (= (:level block) 1))
+                                           (map-indexed vector blocks)))
+          root-level (atom (:level first-block))
+          adjusted-blocks (map-indexed
+                            (fn [index {:keys [id level]}]
+                              {:id id
+                               :level (if (and (< index first-root-level-index))
+                                        (if (< level @root-level)
+                                          (do
+                                            (reset! root-level level)
+                                            1)
+                                          (inc (- level @root-level)))
+                                        level)})
+                            blocks)
+          block (db/pull [:block/uuid (:id first-block)])
+          copy-str (some->> adjusted-blocks
+                            (map (fn [{:keys [id level]}]
+                                   (condp = (:block/format block)
+                                    :org
+                                    (util/format (str (string/join (repeat level "*")) " ((%s))") id)
+                                    :markdown
+                                    (util/format (str (string/join (repeat (dec level) "\t")) "- ((%s))") id))))
+                            (string/join "\n\n"))]
+      (doseq [block blocks]
+        (set-block-id! (:id block)))
+      (util/copy-to-clipboard! copy-str))))
 
 (defn copy-block-embeds
   []
@@ -1226,11 +1258,11 @@
                ;; expand collapsed blocks
                (mapv (fn [b] (if (:collapsed (:block/properties b))
                                (vec (tree/sort-blocks (db/get-block-children repo (:block/uuid b)) b))
-                               [b])) )
+                               [b])))
                (flatten))
           block-ids* (mapv :block/uuid blocks*)
-          level-blocks-map (blocks-with-level blocks*)
-          level-blocks-uuid-map (into {} (mapv (fn [b] [(:block/uuid b) b]) (vals level-blocks-map)))
+          level-blocks (blocks-with-level blocks*)
+          level-blocks-uuid-map (into {} (mapv (fn [b] [(:block/uuid b) b]) (map second level-blocks)))
           level-blocks (mapv (fn [uuid] (get level-blocks-uuid-map uuid)) block-ids*)
           tree (blocks-vec->tree level-blocks)
           top-level-block-uuids (mapv :block/uuid (filterv #(not (vector? %)) tree))]
@@ -1347,8 +1379,11 @@
 (defn cut-block!
   [block-id]
   (when-let [block (db/pull [:block/uuid block-id])]
-    (let [content (:block/content block)]
-      (common-handler/copy-to-clipboard-without-id-property! (:block/format block) content)
+    (let [repo (state/get-current-repo)
+          content (:block/content block)
+          ;; TODO: support org mode
+          [md-content _tree] (compose-copied-blocks-contents-&-block-tree repo [block-id])]
+      (common-handler/copy-to-clipboard-without-id-property! (:block/format block) md-content)
       (delete-block-aux! block true))))
 
 (defn clear-last-selected-block!
@@ -1560,9 +1595,13 @@
       (util/electron?)
       (str "assets://" repo-dir path)
 
-      (mobile/is-native-platform?)
+      (mobile/native-android?)
       (mobile/convert-file-src
        (str "file://" repo-dir path))
+
+      (mobile/native-ios?)
+      (mobile/convert-file-src
+       (str repo-dir path))
 
       :else
       (let [handle-path (str "handle" repo-dir path)
@@ -1664,9 +1703,9 @@
    "^" "^"
    "=" "="
    "/" "/"
-   "+" "+"
+   "+" "+"})
    ;; ":" ":"                              ; TODO: only properties editing and org mode tag
-   })
+
 
 (def reversed-autopair-map
   (zipmap (vals autopair-map)
@@ -1840,11 +1879,6 @@
           (util/stop event)
           (state/append-current-edit-content! doc-text))))))
 
-(defn- block-and-children-content
-  [block-children]
-  (-> (map :block/content block-children)
-      string/join))
-
 (defn- reorder-selected-blocks
   [blocks]
   (let [repo (state/get-current-repo)
@@ -1879,7 +1913,8 @@
           (let [blocks (-> (state/get-selection-blocks)
                            reorder-selected-blocks)
                 blocks (filter #(= (:block/parent %) (:block/parent (first blocks))) blocks)]
-            (move-nodes blocks)))))))
+            (when (seq blocks)
+              (move-nodes blocks))))))))
 
 ;; selections
 (defn on-tab
@@ -2131,22 +2166,10 @@
   [uuid page exclude-properties format content-update-fn]
   (fn [block]
     (outliner-core/block
-     (let [[new-content new-title]
+     (let [new-content
            (if content-update-fn
-             (let [new-content (content-update-fn (:block/content block))
-                   new-title (or (->> (mldoc/->edn
-                                       (str (case format
-                                              :markdown "- "
-                                              :org "* ")
-                                            (if (seq (:block/title block)) "" "\n")
-                                            new-content)
-                                       (mldoc/default-config format))
-                                      (ffirst)
-                                      (second)
-                                      (:title))
-                                 (:block/title block))]
-               [new-content new-title])
-             [(:block/content block) (:block/title block)])
+             (content-update-fn (:block/content block))
+             (:block/content block))
            new-content
            (->> new-content
                 (property/remove-property format "id")
@@ -2165,7 +2188,6 @@
                                                  exclude-properties))
                      :block/meta (dissoc (:block/meta block) :start-pos :end-pos)
                      :block/content new-content
-                     :block/title new-title
                      :block/path-refs (->> (cons (:db/id page) (:block/path-refs block))
                                            (remove nil?))})]
        m))))
@@ -2281,12 +2303,15 @@
            block-uuid (:block/uuid block)
            template-including-parent? (not (false? (:template-including-parent (:block/properties block))))
            blocks (if template-including-parent? (db/get-block-and-children repo block-uuid) (db/get-block-children repo block-uuid))
-           level-blocks (vals (blocks-with-level blocks))
-           grouped-blocks (group-by #(= db-id (:db/id %)) level-blocks)
-           root-block (or (first (get grouped-blocks true)) (assoc (db/pull db-id) :level 1))
-           blocks-exclude-root (get grouped-blocks false)
+           root-block (db/pull db-id)
+           blocks-exclude-root (remove (fn [b] (= (:db/id b) db-id)) blocks)
            sorted-blocks (tree/sort-blocks blocks-exclude-root root-block)
-           result-blocks (if template-including-parent? sorted-blocks (drop 1 sorted-blocks))
+           sorted-blocks (->> (blocks-with-level sorted-blocks)
+                              (map second))
+           result-blocks (if template-including-parent?
+                           sorted-blocks
+                           (->> (drop 1 sorted-blocks)
+                                (map (fn [block] (update block :level dec)))))
            tree (blocks-vec->tree result-blocks)]
        (when element-id
          (insert-command! element-id "" format {}))
@@ -2398,6 +2423,34 @@
                 (cursor/move-cursor-backward input move-to-pos)))
             (insert "\n")))))))
 
+(defn- dwim-in-list
+  [state]
+  (when-not (auto-complete?)
+    (let [{:keys [block]} (get-state)]
+      (when block
+        (let [input (state/get-input)]
+          (when-let [item (thingatpt/list-item-at-point input)]
+            (let [{:keys [full-content indent bullet checkbox ordered _]} item
+                  current-bullet (cljs.reader/read-string bullet)
+                  next-bullet (if ordered (str (inc current-bullet) ".") bullet)
+                  checkbox (when checkbox "[ ] ")]
+              (if (= (count full-content)
+                     (+ (if ordered (+ (count bullet) 2) 2) (when checkbox (count checkbox))))
+                (delete-and-update input (cursor/line-beginning-pos input) (cursor/line-end-pos input))
+                (do (cursor/move-cursor-to-line-end input)
+                    (insert (str "\n" indent next-bullet " " checkbox))
+                    (when ordered
+                      (let [bullet-atom (atom (inc current-bullet))]
+                        (while (when-let [next-item (list/get-next-item input)]
+                                 (swap! bullet-atom inc)
+                                 (let [{:keys [full-content start end]} next-item
+                                       new-bullet @bullet-atom]
+                                   (delete-and-update input start end)
+                                   (insert (string/replace-first full-content (:bullet next-item) new-bullet))
+                                   true))
+                          nil)
+                        (cursor/move-cursor-to input (+ (:end item) (count next-bullet) 2)))))))))))))
+
 (defn- keydown-new-block
   [state]
   (when-not (auto-complete?)
@@ -2421,7 +2474,8 @@
                   (when (thingatpt/get-setting :properties?)
                     (thingatpt/properties-at-point input))
                   (when (thingatpt/get-setting :list?)
-                    (thingatpt/list-item-at-point input)))]
+                    (and (not (cursor/beginning-of-line? input))
+                         (thingatpt/list-item-at-point input))))]
           (cond
             thing-at-point
             (case (:type thing-at-point)
@@ -2441,19 +2495,8 @@
               "page-ref" (when-not (string/blank? (:link thing-at-point))
                            (insert-first-page-block-if-not-exists! (:link thing-at-point))
                            (route-handler/redirect-to-page! (:link thing-at-point)))
-              "list-item"
-              (let [{:keys [full-content indent bullet checkbox ordered _]} thing-at-point
-                    next-bullet (if ordered
-                                  (str (inc (cljs.reader/read-string bullet)) ".")
-                                  bullet)
-                    checkbox (when checkbox "[ ] ")]
-                (if (= (count full-content)
-                       (+ (if ordered (+ (count bullet) 2) 2) (when checkbox (count checkbox))))
-                  (delete-and-update input (cursor/line-beginning-pos input) (cursor/line-end-pos input))
-                  (do (cursor/move-cursor-to-line-end input)
-                      (insert (str "\n" indent next-bullet " " checkbox)))))
-              "properties-drawer"
-              (dwim-in-properties state))
+              "list-item" (dwim-in-list state)
+              "properties-drawer" (dwim-in-properties state))
 
             (and
              (string/blank? content)
@@ -2590,7 +2633,7 @@
           (cursor/move-cursor-forward input))))))
 
 (defn- delete-and-update [^js input start end]
-  (.setRangeText input "" start end)
+  (util/safe-set-range-text! input "" start end)
   (state/set-edit-content! (state/get-edit-input-id) (.-value input)))
 
 (defn- delete-concat [current-block]
@@ -2765,13 +2808,16 @@
           value (gobj/get input "value")
           ctrlKey (gobj/get e "ctrlKey")
           metaKey (gobj/get e "metaKey")
-          is-composing? (gobj/getValueByKeys e "event_" "isComposing")
           pos (cursor/pos input)
           shift? (.-shiftKey e)
-          code (gobj/getValueByKeys e "event_" "code")]
+          code (gobj/getValueByKeys e "event_" "code")
+          hashtag? (or (surround-by? input "#" " ")
+                       (surround-by? input "#" :end)
+                       (= key "#"))]
       (cond
-        (and (or is-composing? (= key-code 229))
-             (not (state/get-editor-show-page-search-hashtag?)))
+        (and (util/event-is-composing? e true) ;; #3218
+             (not hashtag?) ;; #3283 @Rime
+             (not (state/get-editor-show-page-search-hashtag?))) ;; #3283 @MacOS pinyin
         nil
 
         (or ctrlKey metaKey)
@@ -2816,10 +2862,7 @@
           (util/stop e)
           (autopair input-id key format nil))
 
-        (or
-         (surround-by? input "#" " ")
-         (surround-by? input "#" :end)
-         (= key "#"))
+        hashtag?
         (do
           (commands/handle-step [:editor/search-page-hashtag])
           (state/set-last-pos! (cursor/pos input))
@@ -2848,112 +2891,115 @@
         :else
         nil))))
 
-;; key up
 (defn keyup-handler
   [state input input-id search-timeout]
   (fn [e key-code]
-    (let [k (gobj/get e "key")]
-      (when-not (= k "Process")
-        (let [code (gobj/getValueByKeys e "event_" "code")
-              format (:format (get-state))
-              current-pos (cursor/pos input)
-              value (gobj/get input "value")
-              c (util/nth-safe value (dec current-pos))
-              last-key-code (state/get-last-key-code)
-              blank-selected? (string/blank? (util/get-selected-text))
-              shift? (.-shiftKey e)]
-          (when-not (state/get-editor-show-input)
-            (cond
-              (and (not (contains? #{"ArrowDown" "ArrowLeft" "ArrowRight" "ArrowUp"} k))
-                   (not (:editor/show-page-search? @state/state))
-                   (not (:editor/show-page-search-hashtag? @state/state))
-                   (wrapped-by? input "[[" "]]"))
-              (let [orig-pos (cursor/get-caret-pos input)
-                    value (gobj/get input "value")
-                    square-pos (string/last-index-of (subs value 0 (:pos orig-pos)) "[[")
-                    pos (+ square-pos 2)
-                    _ (state/set-last-pos! pos)
-                    pos (assoc orig-pos :pos pos)
-                    command-step (if (= \# (util/nth-safe value (dec square-pos)))
-                                   :editor/search-page-hashtag
-                                   :editor/search-page)]
-                (commands/handle-step [command-step])
-                (reset! commands/*slash-caret-pos pos))
+    (when-not (util/event-is-composing? e)
+      (let [k (gobj/get e "key")
+            code (gobj/getValueByKeys e "event_" "code")
+            format (:format (get-state))
+            current-pos (cursor/pos input)
+            value (gobj/get input "value")
+            c (util/nth-safe value (dec current-pos))
+            last-key-code (state/get-last-key-code)
+            blank-selected? (string/blank? (util/get-selected-text))
+            shift? (.-shiftKey e)
+            is-processed? (util/event-is-composing? e true) ;; #3440
+            non-enter-processed? (and is-processed? ;; #3251
+                                      (not= code "Enter"))] ;; #3459
+        (when-not (or (state/get-editor-show-input) non-enter-processed?)
+          (cond
+            (and (not (contains? #{"ArrowDown" "ArrowLeft" "ArrowRight" "ArrowUp"} k))
+                 (not (:editor/show-page-search? @state/state))
+                 (not (:editor/show-page-search-hashtag? @state/state))
+                 (wrapped-by? input "[[" "]]"))
+            (let [orig-pos (cursor/get-caret-pos input)
+                  value (gobj/get input "value")
+                  square-pos (string/last-index-of (subs value 0 (:pos orig-pos)) "[[")
+                  pos (+ square-pos 2)
+                  _ (state/set-last-pos! pos)
+                  pos (assoc orig-pos :pos pos)
+                  command-step (if (= \# (util/nth-safe value (dec square-pos)))
+                                 :editor/search-page-hashtag
+                                 :editor/search-page)]
+              (commands/handle-step [command-step])
+              (reset! commands/*slash-caret-pos pos))
 
-              (and blank-selected?
-                   (or (= keycode/left-square-bracket key-code (:key-code last-key-code))
-                       (= keycode/left-square-bracket-code code (:code last-key-code)))
-                   (not shift?)
-                   (> current-pos 0)
-                   (not (wrapped-by? input "[[" "]]")))
-              (do
-                (commands/handle-step [:editor/input "[[]]" {:backward-truncate-number 2
-                                                             :backward-pos 2}])
-                (commands/handle-step [:editor/search-page])
-                (reset! commands/*slash-caret-pos (cursor/get-caret-pos input)))
+            (and blank-selected?
+                 (or (= keycode/left-square-bracket key-code (:key-code last-key-code))
+                     (= keycode/left-square-bracket-code code (:code last-key-code)))
+                 (not shift?)
+                 (> current-pos 0)
+                 (not (wrapped-by? input "[[" "]]")))
+            (do
+              (commands/handle-step [:editor/input "[[]]" {:backward-truncate-number 2
+                                                           :backward-pos 2}])
+              (commands/handle-step [:editor/search-page])
+              (reset! commands/*slash-caret-pos (cursor/get-caret-pos input)))
 
-              (and blank-selected?
-                   (or (= keycode/left-paren key-code (:key-code last-key-code))
-                       (= keycode/left-paren-code code (:code last-key-code)))
-                   (:shift? last-key-code)
-                   shift?
-                   (> current-pos 0)
-                   (not (wrapped-by? input "((" "))")))
-              (do
-                (commands/handle-step [:editor/input "(())" {:backward-truncate-number 2
-                                                             :backward-pos 2}])
-                (commands/handle-step [:editor/search-block :reference])
-                (reset! commands/*slash-caret-pos (cursor/get-caret-pos input)))
+            (and blank-selected?
+                 (or (= keycode/left-paren key-code (:key-code last-key-code))
+                     (= keycode/left-paren-code code (:code last-key-code)))
+                 (:shift? last-key-code)
+                 shift?
+                 (> current-pos 0)
+                 (not (wrapped-by? input "((" "))")))
+            (do
+              (commands/handle-step [:editor/input "(())" {:backward-truncate-number 2
+                                                           :backward-pos 2}])
+              (commands/handle-step [:editor/search-block :reference])
+              (reset! commands/*slash-caret-pos (cursor/get-caret-pos input)))
 
-              (and (= "〈" c)
-                   (= "《" (util/nth-safe value (dec (dec current-pos))))
-                   (> current-pos 0))
-              (do
-                (commands/handle-step [:editor/input commands/angle-bracket {:last-pattern "《〈"
-                                                                             :backward-pos 0}])
-                (reset! commands/*angle-bracket-caret-pos (cursor/get-caret-pos input))
-                (reset! commands/*show-block-commands true))
+            (and (= "〈" c)
+                 (= "《" (util/nth-safe value (dec (dec current-pos))))
+                 (> current-pos 0))
+            (do
+              (commands/handle-step [:editor/input commands/angle-bracket {:last-pattern "《〈"
+                                                                           :backward-pos 0}])
+              (reset! commands/*angle-bracket-caret-pos (cursor/get-caret-pos input))
+              (reset! commands/*show-block-commands true))
 
-              (and (= c " ")
-                   (or (= (util/nth-safe value (dec (dec current-pos))) "#")
-                       (not (state/get-editor-show-page-search?))
-                       (and (state/get-editor-show-page-search?)
-                            (not= (util/nth-safe value current-pos) "]"))))
-              (state/set-editor-show-page-search-hashtag! false)
+            (and (= c " ")
+                 (or (= (util/nth-safe value (dec (dec current-pos))) "#")
+                     (not (state/get-editor-show-page-search?))
+                     (and (state/get-editor-show-page-search?)
+                          (not= (util/nth-safe value current-pos) "]"))))
+            (state/set-editor-show-page-search-hashtag! false)
 
-              (and @*show-commands (not= k (state/get-editor-command-trigger)))
-              (let [matched-commands (get-matched-commands input)]
-                (if (seq matched-commands)
-                  (do
-                    (reset! *show-commands true)
-                    (reset! commands/*matched-commands matched-commands))
-                  (reset! *show-commands false)))
+            (and @*show-commands (not= k (state/get-editor-command-trigger)))
+            (let [matched-commands (get-matched-commands input)]
+              (if (seq matched-commands)
+                (do
+                  (reset! *show-commands true)
+                  (reset! commands/*matched-commands matched-commands))
+                (reset! *show-commands false)))
 
-              (and @*show-block-commands (not= key-code 188)) ; not <
-              (let [matched-block-commands (get-matched-block-commands input)]
-                (if (seq matched-block-commands)
-                  (cond
-                    (= key-code 9)       ;tab
-                    (when @*show-block-commands
-                      (util/stop e)
-                      (insert-command! input-id
-                                       (last (first matched-block-commands))
-                                       format
-                                       {:last-pattern commands/angle-bracket}))
+            (and @*show-block-commands (not= key-code 188)) ; not <
+            (let [matched-block-commands (get-matched-block-commands input)]
+              (if (seq matched-block-commands)
+                (cond
+                  (= key-code 9)       ;tab
+                  (when @*show-block-commands
+                    (util/stop e)
+                    (insert-command! input-id
+                                     (last (first matched-block-commands))
+                                     format
+                                     {:last-pattern commands/angle-bracket}))
 
-                    :else
-                    (reset! commands/*matched-block-commands matched-block-commands))
-                  (reset! *show-block-commands false)))
+                  :else
+                  (reset! commands/*matched-block-commands matched-block-commands))
+                (reset! *show-block-commands false)))
 
-              (nil? @search-timeout)
-              (close-autocomplete-if-outside input)
+            (nil? @search-timeout)
+            (close-autocomplete-if-outside input)
 
-              :else
-              nil))
-          (when-not (= k "Shift")
-            (state/set-last-key-code! {:key-code key-code
-                                       :code code
-                                       :shift? (.-shiftKey e)})))))))
+            :else
+            nil))
+        (when-not (or (= k "Shift") is-processed?)
+          (state/set-last-key-code! {:key-code key-code
+                                     :code code
+                                     :shift? (.-shiftKey e)}))))))
+
 
 (defn editor-on-click!
   [id]
@@ -3291,11 +3337,12 @@
      (map (fn [x] (dissoc x :block/children))))))
 
 (defn collapsable? [block-id]
-  (if-let [block (db-model/get-block-by-uuid block-id)]
-    (and
-     (nil? (-> block :block/properties :collapsed))
-     (or (not-empty (:block/body block))
-         (db-model/has-children? block-id)))
+  (if-let [block (db-model/query-block-by-uuid block-id)]
+    (let [block (block/parse-title-and-body block)]
+      (and
+       (nil? (-> block :block/properties :collapsed))
+       (or (not-empty (:block/body block))
+           (db-model/has-children? block-id))))
     false))
 
 (defn collapse-block! [block-id]
@@ -3306,73 +3353,75 @@
   (remove-block-property! block-id :collapsed))
 
 (defn expand!
-  [e]
-  (util/stop e)
-  (cond
-    (state/editing?)
-    (when-let [block-id (:block/uuid (state/get-edit-block))]
-      (expand-block! block-id))
+  ([e] (expand! e false))
+  ([e clear-selection?]
+   (util/stop e)
+   (cond
+     (state/editing?)
+     (when-let [block-id (:block/uuid (state/get-edit-block))]
+       (expand-block! block-id))
 
-    (state/selection?)
-    (do
-      (->> (get-selected-blocks-with-children)
-           (map (fn [dom]
-                  (-> (dom/attr dom "blockid")
-                      medley/uuid
-                      expand-block!)))
-           doall)
-      (clear-selection!))
+     (state/selection?)
+     (do
+       (->> (get-selected-blocks-with-children)
+            (map (fn [dom]
+                   (-> (dom/attr dom "blockid")
+                       medley/uuid
+                       expand-block!)))
+            doall)
+       (and clear-selection? (clear-selection!)))
 
-    :else
-    ;; expand one level
-    (let [blocks-with-level (all-blocks-with-level {})
-          max-level (or (apply max (map :block/level blocks-with-level)) 99)]
-      (loop [level 1]
-        (if (> level max-level)
-          nil
-          (let [blocks-to-expand (->> blocks-with-level
-                                      (filter (fn [b] (= (:block/level b) level)))
-                                      (filter (fn [{:block/keys [properties]}]
-                                                (contains? properties :collapsed))))]
-            (if (empty? blocks-to-expand)
-              (recur (inc level))
-              (doseq [{:block/keys [uuid]} blocks-to-expand]
-                (expand-block! uuid)))))))))
+     :else
+     ;; expand one level
+     (let [blocks-with-level (all-blocks-with-level {})
+           max-level (or (apply max (map :block/level blocks-with-level)) 99)]
+       (loop [level 1]
+         (if (> level max-level)
+           nil
+           (let [blocks-to-expand (->> blocks-with-level
+                                       (filter (fn [b] (= (:block/level b) level)))
+                                       (filter (fn [{:block/keys [properties]}]
+                                                 (contains? properties :collapsed))))]
+             (if (empty? blocks-to-expand)
+               (recur (inc level))
+               (doseq [{:block/keys [uuid]} blocks-to-expand]
+                 (expand-block! uuid))))))))))
 
 (defn collapse!
-  [e]
-  (util/stop e)
-  (cond
-    (state/editing?)
-    (when-let [block-id (:block/uuid (state/get-edit-block))]
-      (collapse-block! block-id))
+  ([e] (collapse! e false))
+  ([e clear-selection?]
+   (util/stop e)
+   (cond
+     (state/editing?)
+     (when-let [block-id (:block/uuid (state/get-edit-block))]
+       (collapse-block! block-id))
 
-    (state/selection?)
-    (do
-      (->> (get-selected-blocks-with-children)
-           (map (fn [dom]
-                  (-> (dom/attr dom "blockid")
-                      medley/uuid
-                      collapse-block!)))
-           doall)
-      (clear-selection!))
+     (state/selection?)
+     (do
+       (->> (get-selected-blocks-with-children)
+            (map (fn [dom]
+                   (-> (dom/attr dom "blockid")
+                       medley/uuid
+                       collapse-block!)))
+            doall)
+       (and clear-selection? (clear-selection!)))
 
-    :else
-    ;; collapse by one level from outside
-    (let [blocks-with-level
-          (all-blocks-with-level {:collapse? true})
-          max-level (or (apply max (map :block/level blocks-with-level)) 99)]
-      (loop [level max-level]
-        (if (zero? level)
-          nil
-          (let [blocks-to-collapse
-                (->> blocks-with-level
-                     (filter (fn [b] (= (:block/level b) level)))
-                     (filter (fn [b] (collapsable? (:block/uuid b)))))]
-            (if (empty? blocks-to-collapse)
-              (recur (dec level))
-              (doseq [{:block/keys [uuid]} blocks-to-collapse]
-                (collapse-block! uuid)))))))))
+     :else
+     ;; collapse by one level from outside
+     (let [blocks-with-level
+           (all-blocks-with-level {:collapse? true})
+           max-level (or (apply max (map :block/level blocks-with-level)) 99)]
+       (loop [level max-level]
+         (if (zero? level)
+           nil
+           (let [blocks-to-collapse
+                 (->> blocks-with-level
+                      (filter (fn [b] (= (:block/level b) level)))
+                      (filter (fn [b] (collapsable? (:block/uuid b)))))]
+             (if (empty? blocks-to-collapse)
+               (recur (dec level))
+               (doseq [{:block/keys [uuid]} blocks-to-collapse]
+                 (collapse-block! uuid))))))))))
 
 (defn- collapse-all!
   []

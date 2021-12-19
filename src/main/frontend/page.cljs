@@ -10,6 +10,15 @@
   [view route-match]
   (view route-match))
 
+(defn- setup-fns!
+  []
+  (try
+    (comp
+      (ui/setup-active-keystroke!)
+      (ui/setup-patch-ios-visual-viewport-state!))
+    (catch js/Error _e
+      nil)))
+
 (rum/defc current-page < rum/reactive
   {:did-mount    (fn [state]
                    (state/set-root-component! (:rum/react-component state))
@@ -17,12 +26,10 @@
                    (ui/inject-document-devices-envs!)
                    (ui/inject-dynamic-style-node!)
                    (plugin-handler/host-mounted!)
-                   (let [teardown-fn (ui/setup-active-keystroke!)]
-                     (assoc state ::teardown teardown-fn)))
+                   (assoc state ::teardown (setup-fns!) ))
    :will-unmount (fn [state]
-                   (let [teardown (::teardown state)]
-                     (when-not (nil? teardown)
-                       (teardown))))}
+                   (when-let [teardown (::teardown state)]
+                     (teardown)))}
   []
   (when-let [route-match (state/sub :route-match)]
     (i18n/tongue-provider

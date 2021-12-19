@@ -14,7 +14,10 @@
             [lambdaisland.glogi :as log]
             [medley.core :as medley]
             [promesa.core :as p]
-            [rum.core :as rum]))
+            [rum.core :as rum]
+            [frontend.mobile.util :as mobile]
+            [frontend.mobile.util :as mobile-util]
+            [cljs.cache :as cache]))
 
 (defonce state
   (let [document-mode? (or (storage/get :document/mode?) false)
@@ -80,6 +83,8 @@
       :ui/shortcut-tooltip? (if (false? (storage/get :ui/shortcut-tooltip?))
                               false
                               true)
+      :ui/visual-viewport-pending? false
+      :ui/visual-viewport-state nil
 
       :document/mode? document-mode?
 
@@ -184,6 +189,31 @@
 
       :srs/cards-due-count nil})))
 
+;; block uuid -> {content(String) -> ast}
+(def blocks-ast-cache (atom (cache/lru-cache-factory {} :threshold 5000)))
+(defn add-block-ast-cache!
+  [block-uuid content ast]
+  (when (and block-uuid content ast)
+    (let [k block-uuid
+          add-cache! (fn []
+                       (reset! blocks-ast-cache (cache/evict @blocks-ast-cache block-uuid))
+                       (reset! blocks-ast-cache (cache/miss @blocks-ast-cache k {content ast})))]
+      (if (cache/has? @blocks-ast-cache k)
+        (let [m (cache/lookup @blocks-ast-cache k)]
+          (if (and (map? m) (get m content))
+            (reset! blocks-ast-cache (cache/hit @blocks-ast-cache k))
+            (add-cache!)))
+        (add-cache!)))))
+
+(defn get-block-ast
+  [block-uuid content]
+  (when (and block-uuid content)
+    (let [k block-uuid]
+      (when (cache/has? @blocks-ast-cache k)
+        (let [m (cache/lookup @blocks-ast-cache k)]
+          (when-let [result (and (map? m) (get m content))]
+            (reset! blocks-ast-cache (cache/hit @blocks-ast-cache k))
+            result))))))
 
 (defn sub
   [ks]
@@ -231,7 +261,9 @@
 
 (defn get-current-repo
   []
-  (or (:git/current-repo @state) "local"))
+  (or (:git/current-repo @state)
+      (when-not (mobile/is-native-platform?)
+        "local")))
 
 (defn get-config
   ([]
@@ -771,14 +803,16 @@
 
 (defn sidebar-add-block!
   [repo db-id block-type block-data]
-  (when db-id
-    (update-state! :sidebar/blocks (fn [blocks]
-                                     (->> (remove #(= (second %) db-id) blocks)
-                                          (cons [repo db-id block-type block-data])
-                                          (distinct))))
-    (open-right-sidebar!)
-    (when-let [elem (gdom/getElementByClass "cp__right-sidebar-scrollable")]
-      (util/scroll-to elem 0))))
+  (when-not (or (util/mobile?)
+            (mobile-util/is-native-platform?))
+   (when db-id
+     (update-state! :sidebar/blocks (fn [blocks]
+                                      (->> (remove #(= (second %) db-id) blocks)
+                                           (cons [repo db-id block-type block-data])
+                                           (distinct))))
+     (open-right-sidebar!)
+     (when-let [elem (gdom/getElementByClass "cp__right-sidebar-scrollable")]
+       (util/scroll-to elem 0)))))
 
 (defn sidebar-remove-block!
   [idx]
@@ -1408,6 +1442,10 @@
   []
   (toggle! :ui/settings-open?))
 
+(defn settings-open?
+  []
+  (:ui/settings-open? @state))
+
 (defn close-settings!
   []
   (set-state! :ui/settings-open? false))
@@ -1568,3 +1606,11 @@
 (defn get-last-key-code
   []
   (:editor/last-key-code @state))
+
+(defn set-visual-viewport-state
+  [input]
+  (set-state! :ui/visual-viewport-state input))
+
+(defn get-visual-viewport-state
+  []
+  (:ui/visual-viewport-state @state))

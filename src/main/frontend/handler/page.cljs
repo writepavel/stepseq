@@ -33,7 +33,8 @@
             [frontend.util.page-property :as page-property]
             [goog.object :as gobj]
             [lambdaisland.glogi :as log]
-            [promesa.core :as p]))
+            [promesa.core :as p]
+            [frontend.mobile.util :as mobile]))
 
 (defn- get-directory
   [journal?]
@@ -124,31 +125,6 @@
          (when redirect?
            (route-handler/redirect-to-page! page))
          page)))))
-
-
-
-(defn get-plugins
-  [blocks]
-  (let [plugins (atom {})
-        add-plugin #(swap! plugins assoc % true)]
-    (walk/postwalk
-     (fn [x]
-       (if (and (vector? x)
-                (>= (count x) 2))
-         (let [[type option] x]
-           (case type
-             "Src" (when (:language option)
-                     (add-plugin "highlight"))
-             "Export" (when (= option "latex")
-                        (add-plugin "latex"))
-             "Latex_Fragment" (add-plugin "latex")
-             "Math" (add-plugin "latex")
-             "Latex_Environment" (add-plugin "latex")
-             nil)
-           x)
-         x))
-     (map :block/body blocks))
-    @plugins))
 
 (defn delete-file!
   [repo page-name]
@@ -293,6 +269,15 @@
                          (vec))]
       (config-handler/set-config! :favorites favorites))))
 
+(defn toggle-favorite! []
+  (let [page-name  (state/get-current-page)
+        favorites  (:favorites (state/sub-graph-config))
+        favorited? (contains? (set (map string/lower-case favorites))
+                              (string/lower-case page-name))]
+    (if favorited?
+      (unfavorite-page! page-name)
+      (favorite-page! page-name))))
+
 (defn delete!
   [page-name ok-handler & {:keys [delete-file?]
                            :or {delete-file? true}}]
@@ -340,22 +325,20 @@
         page-ids (->> (map :block/page blocks)
                       (remove nil?)
                       (set))
-        tx       (->> (map (fn [{:block/keys [uuid title content properties format pre-block?] :as block}]
+        tx       (->> (map (fn [{:block/keys [uuid content properties format pre-block?] :as block}]
                              (let [content    (let [content' (replace-old-page! content old-original-name new-name)]
                                                 (when-not (= content' content)
                                                   content'))
                                    properties (let [properties' (walk-replace-old-page! properties old-original-name new-name)]
                                                 (when-not (= properties' properties)
                                                   properties'))]
-                               (when (or title content properties)
+                               (when (or content properties)
                                  (util/remove-nils-non-nested
-                                  (merge
-                                   {:block/uuid       uuid
-                                    :block/content    content
-                                    :block/properties properties
-                                    :block/refs (rename-update-block-refs! (:block/refs block) (:db/id page) (:db/id to-page))
-                                    :block/path-refs (rename-update-block-refs! (:block/path-refs block) (:db/id page) (:db/id to-page))}
-                                   (block/parse-title-and-body format pre-block? content)))))) blocks)
+                                  {:block/uuid       uuid
+                                   :block/content    content
+                                   :block/properties properties
+                                   :block/refs (rename-update-block-refs! (:block/refs block) (:db/id page) (:db/id to-page))
+                                   :block/path-refs (rename-update-block-refs! (:block/path-refs block) (:db/id page) (:db/id to-page))})))) blocks)
                       (remove nil?))]
     (db/transact! repo tx)
     (doseq [page-id page-ids]
@@ -700,8 +683,8 @@
                (not (:repo/loading-files? @state/state)))
       (state/set-today! (date/today))
       (when (or (db/cloned? repo)
-                (or (config/local-db? repo)
-                    (= "local" repo)))
+                (config/local-db? repo)
+                (and (= "local" repo) (not (mobile/is-native-platform?))))
         (let [title (date/today)
               today-page (string/lower-case title)
               template (state/get-default-journal-template)

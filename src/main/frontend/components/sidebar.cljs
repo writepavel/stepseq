@@ -30,7 +30,10 @@
             [goog.object :as gobj]
             [rum.core :as rum]
             [frontend.extensions.srs :as srs]
-            [frontend.extensions.pdf.assets :as pdf-assets]))
+            [frontend.extensions.pdf.assets :as pdf-assets]
+            [frontend.components.widgets :as widgets]
+            [frontend.mobile.util :as mobile-util]
+            [frontend.handler.mobile.swipe :as swipe]))
 
 (defn nav-item
   [title href svg-d active? close-modal-fn]
@@ -61,15 +64,6 @@
     [:span
      [:a.more svg/arrow-down-v2]]]
    [:div.bd child]])
-
-;; TODO: enhance
-(defn- pick-one-ast-page-ref
-  [block]
-  (when-let [title-ast (and block (:block/title block))]
-    (when-let [link-ref (and (= (ffirst title-ast) "Link")
-                             (:url (second (first title-ast))))]
-      (when (= "Page_ref" (first link-ref))
-        (second link-ref)))))
 
 (defn- delta-y
   [e]
@@ -191,12 +185,13 @@
                  200)
                 state)}
   [state]
-  (let [num (state/sub :srs/cards-due-count)]
-    [:a.item.group.flex.items-center.px-2.py-2.text-sm.font-medium.rounded-md {:on-click #(state/pub-event! [:modal/show-cards])}
-     (ui/icon "infinity mr-3" {:style {:font-size 20}})
-     [:span.flex-1 "Flashcards"]
-     (when (and num (not (zero? num)))
-       [:span.ml-3.inline-block.py-0.5.px-3.text-xs.font-medium.rounded-full.fade-in num])]))
+  (rum/with-context [[t] i18n/*tongue-context*]
+    (let [num (state/sub :srs/cards-due-count)]
+      [:a.item.group.flex.items-center.px-2.py-2.text-sm.font-medium.rounded-md {:on-click #(state/pub-event! [:modal/show-cards])}
+      (ui/icon "infinity mr-3" {:style {:font-size 20}})
+      [:span.flex-1 (t :right-side-bar/flashcards)]
+      (when (and num (not (zero? num)))
+        [:span.ml-3.inline-block.py-0.5.px-3.text-xs.font-medium.rounded-full.fade-in num])])))
 
 (defn get-default-home-if-valid
   []
@@ -223,87 +218,78 @@
     (ui/icon (str icon " mr-3") {:style {:font-size 20}})
     [:span.flex-1 title]]])
 
-(rum/defc sidebar-nav < rum/reactive
+(rum/defc sidebar-nav
   [route-match close-modal-fn]
   (rum/with-context [[t] i18n/*tongue-context*]
     (let [active? (fn [route] (= route (get-in route-match [:data :name])))
           page-active? (fn [page]
                          (= page (get-in route-match [:parameters :path :name])))
-          left-sidebar? (state/sub :ui/left-sidebar-open?)
           default-home (get-default-home-if-valid)]
-      (when left-sidebar?
-        [:div.left-sidebar-inner.flex-1.flex.flex-col.min-h-0
-         {:on-click #(when-let [^js target (and (util/mobile?) (.-target %))]
-                       (when (some (fn [sel] (boolean (.closest target sel)))
-                                   [".favorites" ".recent" ".dropdown-wrapper" ".nav-header"])
-                         (close-modal-fn)))}
-         [:div.flex.flex-col.pb-4.wrap
-          [:nav.px-2.space-y-1 {:aria-label "Sidebar"}
-           (repo/repos-dropdown)
 
-           [:div.nav-header
+      [:div.left-sidebar-inner.flex-1.flex.flex-col.min-h-0
+       {:on-click #(when-let [^js target (and (util/sm-breakpoint?) (.-target %))]
+                     (when (some (fn [sel] (boolean (.closest target sel)))
+                                 [".favorites" ".recent" ".dropdown-wrapper" ".nav-header"])
+                       (close-modal-fn)))}
+       [:div.flex.flex-col.pb-4.wrap
+        [:nav.px-2.space-y-1 {:aria-label "Sidebar"}
+         (repo/repos-dropdown)
 
-            (if (:page default-home)
-              (sidebar-item
-               {:class "home-nav"
-                :title (:page default-home)
-                :on-click-handler route-handler/redirect-to-home!
-                :icon "home"})
-              (sidebar-item
-               {:class "journals-nav"
-                :title "Journals"
-                :on-click-handler route-handler/go-to-journals!
-                :icon "calendar"}))
+         [:div.nav-header
 
-            [:div.flashcards-nav
-             (flashcards)]
-
+          (if (:page default-home)
             (sidebar-item
-             {:class "graph-view-nav"
-              :title "Graph view"
-              :href (rfe/href :graph)
-              :icon "hierarchy"})
-
+              {:class            "home-nav"
+               :title            (:page default-home)
+               :on-click-handler route-handler/redirect-to-home!
+               :icon             "home"})
             (sidebar-item
-             {:class "all-pages-nav"
-              :title "All pages"
-              :href (rfe/href :all-pages)
-              :icon "files"})]]
+              {:class            "journals-nav"
+               :title            (t :right-side-bar/journals)
+               :on-click-handler route-handler/go-to-journals!
+               :icon             "calendar"}))
 
-          (favorites t)
+          [:div.flashcards-nav
+           (flashcards)]
 
-          (recent-pages t)
+          (sidebar-item
+            {:class "graph-view-nav"
+             :title (t :right-side-bar/graph-view)
+             :href  (rfe/href :graph)
+             :icon  "hierarchy"})
 
-          [:div.flex-column-spacer] ;; Push following objects to the bottom
+          (sidebar-item
+            {:class "all-pages-nav"
+             :title (t :right-side-bar/all-pages)
+             :href  (rfe/href :all-pages)
+             :icon  "files"})]]
 
-          [:nav.px-2.space-y-1 {:aria-label "Sidebar"
-                                :class "new-page"}
-           (when-not config/publishing?
-             [:a.item.group.flex.items-center.px-2.py-2.text-sm.font-medium.rounded-md {:on-click #(state/pub-event! [:go/search])}
-              (ui/icon "circle-plus mr-3" {:style {:font-size 20}})
-              [:span.flex-1 "New page"]])]]]))))
+        (favorites t)
 
-(rum/defc sidebar-mobile-sidebar < rum/reactive
-  [{:keys [open? left-sidebar-open? close-fn route-match]}]
-  [:div.md:hidden.ls-mobile-left-sidebar
-   {:class (if left-sidebar-open? "is-left-sidebar-open" "")}
-   [:div.fixed.inset-0.z-30.bg-gray-600.pointer-events-none.ease-linear.duration-300
-    {:class (if @open?
-              "opacity-75 pointer-events-auto"
-              "opacity-0 pointer-events-none")
-     :on-click close-fn}]
-   [:div#left-bar.fixed.inset-y-0.left-0.flex.flex-col.z-40.w-full.transform.ease-in-out.duration-300
-    {:class (if @open?
-              "translate-x-0"
-              "-translate-x-full")
-     :style {:max-width "86vw"}}
-    (when @open?
-      [:div.absolute.top-0.right-0.p-1.z-10
-       [:a.button
-        {:on-click close-fn}
-        (ui/icon "x" {:style {:font-size 24}})]])
-    [:div.flex-1.h-0.overflow-y-auto
-     (sidebar-nav route-match close-fn)]]])
+        (recent-pages t)
+
+        [:div.flex-column-spacer]                           ;; Push following objects to the bottom
+
+        [:nav.px-2.space-y-1 {:aria-label "Sidebar"
+                              :class      "new-page"}
+         (when-not config/publishing?
+           [:a.item.group.flex.items-center.px-2.py-2.text-sm.font-medium.rounded-md
+            {:on-click (fn []
+                         (and (util/sm-breakpoint?)
+                              (state/toggle-left-sidebar!))
+                         (state/pub-event! [:go/search]))}
+            (ui/icon "circle-plus mr-3" {:style {:font-size 20}})
+            [:span.flex-1 (t :right-side-bar/new-page)]])]]])))
+
+(rum/defc left-sidebar < rum/reactive
+  [{:keys [left-sidebar-open? route-match]}]
+  (let [close-fn #(state/set-left-sidebar-open! false)]
+    [:div#left-sidebar.cp__sidebar-left-layout
+     {:class (util/classnames [{:is-open left-sidebar-open?}])}
+
+     [ ;; sidebar contents
+      (sidebar-nav route-match close-fn)
+      [:span.shade-mask {:on-click close-fn}]]]))
 
 (rum/defc main <
   {:did-mount (fn [state]
@@ -322,22 +308,21 @@
         mobile? (util/mobile?)]
     (rum/with-context [[t] i18n/*tongue-context*]
       [:div#main-content.cp__sidebar-main-layout.flex-1.flex
-       {:class (util/classnames [{:is-left-sidebar-open left-sidebar-open?}])}
+       {:class (util/classnames [{:is-left-sidebar-open left-sidebar-open?}])
+        :style {:padding-top (ui/main-content-top-padding)}}
 
        ;; desktop left sidebar layout
-       (when-not mobile?
-         [:div#sidebar-nav-wrapper.cp__sidebar-left-layout.overflow-y-auto.h-full
-          {:class (util/classnames [{:is-open left-sidebar-open?}])}
-
-          ;; sidebar contents
-          (sidebar-nav route-match nil)])
+       (left-sidebar {:left-sidebar-open? left-sidebar-open?
+                      :route-match route-match})
 
        [:div#main-content-container.w-full.flex.justify-center
         [:div.cp__sidebar-main-content
          {:data-is-global-graph-pages global-graph-pages?
           :data-is-full-width         (or global-graph-pages?
                                           (contains? #{:all-files :all-pages :my-publishing} route-name))}
-         (widgets/demo-graph-alert)
+
+         (when-not (mobile-util/is-native-platform?)
+           (widgets/demo-graph-alert))
 
          (widgets/github-integration-soon-deprecated-alert)
 
@@ -351,8 +336,8 @@
              (ui/loading (t :loading))]]
 
            :else
-           [:div.pb-24 {:class (if global-graph-pages? "" (util/hiccup->class "max-w-7xl.mx-auto"))
-                        :style {:margin-bottom (if global-graph-pages? 0 120)}}
+           [:div {:class (if global-graph-pages? "" (util/hiccup->class "max-w-7xl.mx-auto.pb-24"))
+                  :style {:margin-bottom (if global-graph-pages? 0 120)}}
             main-content])]]])))
 
 (rum/defc footer
@@ -428,7 +413,10 @@
          (seq latest-journals)
          (journal/journals latest-journals)
 
-         (and logged? (empty? (:repos me)))
+         (or
+          (and (mobile-util/is-native-platform?)
+               (nil? (state/get-current-repo)))
+          (and logged? (empty? (:repos me))))
          (widgets/add-graph)
 
                          ;; FIXME: why will this happen?
@@ -503,6 +491,9 @@
                         (if (state/modal-opened?)
                           (state/close-modal!)
                           (hide-context-menu-and-clear-selection)))))))
+  {:did-mount (fn [state]
+                (swipe/setup-listeners!)
+                state)}
   [state route-match main-content]
   (let [{:keys [open? close-fn open-fn]} state
         close-fn (fn []
@@ -524,6 +515,7 @@
         indexeddb-support? (state/sub :indexeddb/support?)
         page? (= :page route-name)
         home? (= :home route-name)
+        edit? (:editor/editing? @state/state)
         default-home (get-default-home-if-valid)]
     (rum/with-context [[t] i18n/*tongue-context*]
       (theme/container
@@ -531,6 +523,7 @@
         :theme         theme
         :route         route-match
         :current-repo  current-repo
+        :edit?         edit?
         :nfs-granted?  granted?
         :db-restoring? db-restoring?
         :sidebar-open? sidebar-open?
@@ -543,14 +536,9 @@
        [:div.theme-inner
         {:class (util/classnames [{:ls-left-sidebar-open left-sidebar-open?}])}
 
-        (sidebar-mobile-sidebar
-         {:open?       open?
-          :left-sidebar-open? left-sidebar-open?
-          :close-fn    close-fn
-          :route-match route-match})
-
-        [:div.#app-container.h-screen.flex
-         [:div.flex-1.h-full.flex.flex-col#left-container.relative
+        [:div.#app-container
+         {:style {:padding-top (ui/main-content-top-padding)}}
+         [:div#left-container
           {:class (if (state/sub :ui/sidebar-open?) "overflow-hidden" "w-full")}
           (header/header {:open-fn        open-fn
                           :white?         white?
